@@ -33,6 +33,11 @@ def attach_args(parser=None):
         type=str,
         help="The directory containing anchor docs with bk files",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        help="Output dir to write results",
+    )
     return parser
 
 
