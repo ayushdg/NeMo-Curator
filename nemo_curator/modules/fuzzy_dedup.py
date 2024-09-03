@@ -19,7 +19,7 @@ import os
 import time
 import warnings
 from datetime import datetime
-from itertools import combinations
+from itertools import pairwise
 from typing import List, Tuple, Union
 
 import cudf
@@ -643,7 +643,7 @@ class _BucketsToEdges:
         # Create pairs of all documents within a bucket since they are near duplicates
         # Effectively create a edge list of all near duplicate documents
         for bucket_doc in bucket_docs:
-            edges.extend(combinations(bucket_doc, 2))
+            edges.extend(pairwise(bucket_doc))
         edges = pd.DataFrame(edges, columns=self.output_ids)
         edges = pa.Table.from_pandas(edges)
         result_df = cudf.DataFrame.from_arrow(edges)
