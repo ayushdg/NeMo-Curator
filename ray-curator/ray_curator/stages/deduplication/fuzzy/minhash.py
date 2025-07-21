@@ -1,8 +1,6 @@
-import os
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 import cudf
 import numpy as np
@@ -10,7 +8,7 @@ import ray
 import rmm
 from ray.util.actor_pool import ActorPool
 
-from ray_curator.utils.file_utils import get_all_files_paths_under
+from ray_curator.utils.file_utils import get_all_files_paths_under, get_fs
 from ray_curator.utils.id_generator import CURATOR_ID_STR, IdGenerator
 from ray_curator.utils.io_utils import RayIO
 from ray_curator.utils.ray_utils import get_num_gpus
@@ -171,7 +169,9 @@ class GPUMinhashActor(MinHash, RayIO):
         infiles: str | list[str],
         outfile: str,
         text_column: str,
-        read_func: Callable | None = None,
+        read_format: Literal["jsonl", "parquet"] = "jsonl",
+        read_kwargs: dict[str, Any] | None = None,
+        write_kwargs: dict[str, Any] | None = None,
         columns: list[str] | None = None,
         minhash_column: str = "_minhash_signature",
     ):
@@ -196,10 +196,7 @@ class GPUMinhashActor(MinHash, RayIO):
             columns = [text_column]
 
         # Read input file
-        if read_func is None:
-            df = self.read_jsonl(infiles, columns=columns, assign_id=True)
-        else:
-            df = self.custom_read(filepath=infiles, read_func=read_func, assign_id=True)
+        df = self.custom_read(filepath=infiles, read_format=read_format, read_kwargs=read_kwargs, assign_id=True)
 
         result_df = df[[CURATOR_ID_STR]]
 
@@ -207,30 +204,89 @@ class GPUMinhashActor(MinHash, RayIO):
         result_df[minhash_column] = self.compute_minhashes(df[text_column])
 
         # Write output file
-        self.write_parquet(result_df, outfile)
+        self.write_parquet(result_df, outfile, write_kwargs=write_kwargs)
 
 
 def minhash(  # noqa: PLR0913
-    input_data_dir: str,
+    input_data_path: str | list[str] | list[list[str]],
     output_minhash_dir: str,
-    text_column: str,
-    files_per_partition: int,
-    read_func: Callable,
+    read_format: Literal["jsonl", "parquet"] = "jsonl",
+    read_kwargs: dict[str, Any] | None = None,
+    write_kwargs: dict[str, Any] | None = None,
+    output_storage_options: dict[str, Any] | None = None,
+    text_column: str = "text",
+    files_per_partition: int | None = None,
     char_ngrams: int = 24,
     use_64bit_hash: bool = False,
     seed: int = 42,
     num_hashes: int = 260,
-) -> None:
-    num_gpus = get_num_gpus()
+    num_gpus: int | None = None,
+) -> list[str]:
+    """
+    Compute MinHash signatures for documents.
+
+    Parameters
+    ----------
+    input_data : str | list[str] | list[list[str]]
+        - str: Directory path containing input files (legacy behavior)
+        - list[str]: List of file paths to process
+        - list[list[str]]: Pre-batched file groups (each inner list is processed by one actor)
+    output_minhash_dir : str
+        Directory to write minhash outputs
+    read_format : Literal["jsonl", "parquet"]
+        Format of the input files. If not specific will assume jsonl files.
+    read_kwargs : dict[str, Any] | None
+        Keyword arguments for the read function.
+    write_kwargs : dict[str, Any] | None
+        Keyword arguments for the write function.
+    output_storage_options : dict[str, Any] | None
+        Storage options for the output directory
+    text_column : str
+        Column containing text to compute minhashes for
+    files_per_partition : int | None
+        Number of files per actor batch. Ignored if input_data is pre-batched.
+    char_ngrams : int
+        Width of text window for minhashing
+    use_64bit_hash : bool
+        Whether to use 64-bit hash function
+    seed : int
+        Random seed for minhashing
+    num_hashes : int
+        Number of minhash permutations
+    num_gpus : int | None
+        Number of GPUs to use. If None, uses all available GPUs.
+    Returns
+    -------
+    list[str]
+        List of output file paths
+    """
+    # Initialize the ID generator which maps input files to a range of integer IDs on the fly
     curator_id_generator = IdGenerator.options(name="fuzzy_dedup_id_generator").remote()
 
-    input_files = get_all_files_paths_under(input_data_dir)
-    input_batches = [input_files[i : i + files_per_partition] for i in range(0, len(input_files), files_per_partition)]
-    print(f"Processing a total of {len(input_files)} files in {len(input_batches)} batches")
-    output_files = [os.path.join(output_minhash_dir, f"partition_{i}.parquet") for i in range(len(input_batches))]
+    # Handle different input types
+    if isinstance(input_data_path, list) and len(input_data_path) > 0 and isinstance(input_data_path[0], list):
+        # Pre-batched file groups - use as is
+        input_batches = input_data_path
+        total_files = sum(len(batch) for batch in input_batches)
+        print(f"Processing {total_files} files in {len(input_batches)} batches")
+    else:
+        # Convert directory to file list if needed
+        input_files = (
+            get_all_files_paths_under(input_data_path) if isinstance(input_data_path, str) else input_data_path
+        )
+        # Apply batching logic
+        if files_per_partition is None:
+            files_per_partition = 1  # Default value
+        input_batches = [
+            input_files[i : i + files_per_partition] for i in range(0, len(input_files), files_per_partition)
+        ]
+        print(f"Processing {len(input_files)} files in {len(input_batches)} batches")
 
-    os.makedirs(os.path.dirname(output_files[0]), exist_ok=True)
+    fs = get_fs(output_minhash_dir, output_storage_options)
+    fs.makedirs(output_minhash_dir, exist_ok=True)
+    output_files = [fs.sep.join(output_minhash_dir, f"partition_{i}.parquet") for i in range(len(input_batches))]
 
+    num_gpus = get_num_gpus() if num_gpus is None else num_gpus
     start = time.time()
     # Pass the shared ID generator to all actors
     minhash_actors = [
@@ -249,7 +305,9 @@ def minhash(  # noqa: PLR0913
     results = minhash_actor_pool.map_unordered(
         lambda actor, values: actor.__call__.remote(
             infiles=values[0],
-            read_func=read_func,
+            read_format=read_format,
+            read_kwargs=read_kwargs,
+            write_kwargs=write_kwargs,
             outfile=values[1],
             columns=[text_column],
             text_column=text_column,
@@ -263,3 +321,5 @@ def minhash(  # noqa: PLR0913
     del minhash_actor_pool
     for actor in minhash_actors:
         ray.kill(actor)
+
+    return output_files
