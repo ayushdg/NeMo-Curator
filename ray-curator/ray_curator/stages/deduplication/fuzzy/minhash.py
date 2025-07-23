@@ -1,6 +1,6 @@
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import cudf
 import numpy as np
@@ -8,10 +8,16 @@ import ray
 import rmm
 from ray.util.actor_pool import ActorPool
 
+from ray_curator.stages.base import ProcessingStage
+from ray_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR, IdGenerator
+from ray_curator.stages.deduplication.io_utils import DeduplicationIO
+from ray_curator.stages.resources import Resources
+from ray_curator.tasks import FileGroupTask
 from ray_curator.utils.file_utils import get_all_files_paths_under, get_fs
-from ray_curator.utils.id_generator import CURATOR_ID_STR, IdGenerator
-from ray_curator.utils.io_utils import RayIO
 from ray_curator.utils.ray_utils import get_num_gpus
+
+if TYPE_CHECKING:
+    from ray_curator.backends.base import WorkerMetadata
 
 
 class MinHash(ABC):
@@ -54,9 +60,7 @@ class MinHash(ABC):
         """
 
 
-# Create a Ray Actor
-@ray.remote(num_gpus=1)
-class GPUMinhashActor(MinHash, RayIO):
+class GPUMinHash(MinHash, DeduplicationIO):
     def __init__(  # noqa: PLR0913
         self,
         seed: int = 42,
@@ -74,7 +78,7 @@ class GPUMinhashActor(MinHash, RayIO):
             char_ngrams=char_ngrams,
             use_64bit_hash=use_64bit_hash,
         )
-        RayIO.__init__(
+        DeduplicationIO.__init__(
             self,
             id_generator=id_generator,
         )
@@ -195,16 +199,171 @@ class GPUMinhashActor(MinHash, RayIO):
         if columns is None:
             columns = [text_column]
 
-        # Read input file
-        df = self.custom_read(filepath=infiles, read_format=read_format, read_kwargs=read_kwargs, assign_id=True)
+        # Read input file based on format
+        if read_format == "jsonl":
+            df = self.read_jsonl(filepath=infiles, columns=columns, assign_id=True, **(read_kwargs or {}))
+        elif read_format == "parquet":
+            df = self.read_parquet(filepath=infiles, assign_id=True, **(read_kwargs or {}))
+        else:
+            msg = f"Unsupported read format: {read_format}"
+            raise ValueError(msg)
 
-        result_df = df[[CURATOR_ID_STR]]
+        result_df = df[[CURATOR_DEDUP_ID_STR]]
 
         # Compute minhashes on the text column and add to dataframe
         result_df[minhash_column] = self.compute_minhashes(df[text_column])
 
         # Write output file
         self.write_parquet(result_df, outfile, write_kwargs=write_kwargs)
+
+
+class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask]):
+    """
+    ProcessingStage for computing MinHash signatures on documents for fuzzy deduplication.
+
+    This stage takes FileGroupTask containing paths to input documents and produces
+    FileGroupTask containing paths to computed minhash signature files. It uses GPU-accelerated
+    MinHash computation to generate locality-sensitive hash signatures that can be used
+    for approximate duplicate detection.
+
+    The stage automatically handles:
+    - Reading input files (JSONL or Parquet format)
+    - Assigning unique Integer IDs to documents using the IdGenerator actor
+    - Computing MinHash signatures using GPU acceleration
+    - Writing results to Parquet files
+
+    Parameters
+    ----------
+    output_dir : str
+        Directory where minhash output files will be written
+    text_column : str, default="text"
+        Name of the column containing text to compute minhashes from
+    minhash_column : str, default="_minhash_signature"
+        Name of the column where minhash signatures will be stored
+    char_ngrams : int, default=24
+        Width of character n-grams for minhashing
+    num_hashes : int, default=260
+        Number of hash functions (length of minhash signature)
+    seed : int, default=42
+        Random seed for reproducible minhash generation
+    use_64bit_hash : bool, default=False
+        Whether to use 64-bit hash functions (vs 32-bit)
+    read_format : Literal["jsonl", "parquet"], default="jsonl"
+        Format of input files
+    read_kwargs : dict[str, Any] | None, default=None
+        Additional keyword arguments for reading input files
+    write_kwargs : dict[str, Any] | None, default=None
+        Additional keyword arguments for writing output files
+
+    Examples
+    --------
+    >>> stage = MinHashStage(
+    ...     output_dir="/path/to/minhash/output",
+    ...     text_column="content",
+    ...     num_hashes=128,
+    ...     char_ngrams=5
+    ... )
+    >>> # Use in a pipeline to process document batches
+    """
+
+    def __init__(  # noqa: PLR0913
+        self,
+        output_dir: str,
+        text_column: str = "text",
+        minhash_column: str = "_minhash_signature",
+        char_ngrams: int = 24,
+        num_hashes: int = 260,
+        seed: int = 42,
+        use_64bit_hash: bool = False,
+        read_format: Literal["jsonl", "parquet"] = "jsonl",
+        read_kwargs: dict[str, Any] | None = None,
+        write_kwargs: dict[str, Any] | None = None,
+    ):
+        # Set ProcessingStage attributes
+        self._name = "minhash"
+        self._resources = Resources(gpus=1.0)  # Requires 1 GPU
+
+        self.output_dir = output_dir
+        self.text_column = text_column
+        self.minhash_column = minhash_column
+        self.char_ngrams = char_ngrams
+        self.num_hashes = num_hashes
+        self.seed = seed
+        self.use_64bit_hash = use_64bit_hash
+        self.read_format = read_format
+        self.read_kwargs = read_kwargs or {}
+        self.write_kwargs = write_kwargs or {}
+
+        # Initialize the minhash processor in setup
+        self.minhash_processor = None
+        self.id_generator = None
+
+    def setup(self, _worker_metadata: "WorkerMetadata | None" = None) -> None:
+        """Initialize the GPU MinHash processor and ID generator."""
+        # Initialize the ID generator (will be shared across workers)
+        self.id_generator = IdGenerator.options(
+            name="dedup_id_generator", get_if_exists=True, lifetime="detached"
+        ).remote()
+
+        # Initialize the GPU minhash processor
+        self.minhash_processor = GPUMinHash(
+            seed=self.seed,
+            num_hashes=self.num_hashes,
+            char_ngrams=self.char_ngrams,
+            use_64bit_hash=self.use_64bit_hash,
+            pool=True,
+            id_generator=self.id_generator,
+        )
+
+    def inputs(self) -> tuple[list[str], list[str]]:
+        """Define input requirements."""
+        return (["data"], [])
+
+    def outputs(self) -> tuple[list[str], list[str]]:
+        """Define outputs - produces FileGroupTask with minhash files."""
+        return (["data"], [])
+
+    def process(self, task: FileGroupTask) -> FileGroupTask:
+        """
+        Process a group of files to compute minhashes.
+
+        Args:
+            task: FileGroupTask containing file paths to process
+
+        Returns:
+            FileGroupTask containing paths to minhash output files
+        """
+        fs = get_fs(self.output_dir, self.write_kwargs.get("storage_options", {}))
+        output_file = fs.sep.join([self.output_dir, "MinHashStage", f"{task.task_id}.parquet"])
+
+        read_kwargs = self.read_kwargs.copy()
+        read_kwargs["storage_options"] = task._metadata.get("storage_options", {})
+
+        # Process files
+        self.minhash_processor(
+            infiles=task.data,
+            outfile=output_file,
+            text_column=self.text_column,
+            read_format=self.read_format,  # type: ignore[arg-type]
+            read_kwargs=read_kwargs,
+            write_kwargs=self.write_kwargs,
+            columns=[self.text_column],
+            minhash_column=self.minhash_column,
+        )
+
+        # Return FileGroupTask with output file
+        return FileGroupTask(
+            task_id=f"{task.task_id}",
+            dataset_name=f"{task.dataset_name}_minhash",
+            data=[output_file],
+            _metadata={
+                **task._metadata,
+                "minhash_column": self.minhash_column,
+                "num_hashes": self.num_hashes,
+                "storage_options": self.write_kwargs.get("storage_options", {}),
+            },
+            _stage_perf=task._stage_perf,
+        )
 
 
 def minhash(  # noqa: PLR0913
@@ -290,7 +449,7 @@ def minhash(  # noqa: PLR0913
     start = time.time()
     # Pass the shared ID generator to all actors
     minhash_actors = [
-        GPUMinhashActor.remote(
+        GPUMinHash.remote(
             id_generator=curator_id_generator,  # Still pass it, but it will only be used if needed
             char_ngrams=char_ngrams,
             use_64bit_hash=use_64bit_hash,
