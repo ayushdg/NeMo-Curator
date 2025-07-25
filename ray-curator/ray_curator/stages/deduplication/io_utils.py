@@ -6,6 +6,7 @@ import numpy as np
 import ray
 
 from ray_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR, IdGenerator
+from ray_curator.utils.file_utils import get_fs
 
 
 class DeduplicationIO:
@@ -31,7 +32,10 @@ class DeduplicationIO:
         df = cudf.read_parquet(filepath, **read_kwargs)
         return self.assign_id(filepath, df) if assign_id and self.id_generator else df
 
-    def write_parquet(self, df: "cudf.DataFrame", filepath: str | list[str], **kwargs) -> None:
+    def write_parquet(self, df: "cudf.DataFrame", filepath: str, **kwargs) -> None:
+        fs = get_fs(filepath, storage_options=kwargs.get("storage_options", {}))
+        # TODO: Add overwrite behavior here
+        fs.makedirs(fs._parent(filepath), exist_ok=True)
         df.to_parquet(filepath, **kwargs)
 
     def custom_read(
