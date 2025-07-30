@@ -276,7 +276,7 @@ class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         write_kwargs: dict[str, Any] | None = None,
     ):
         # Set ProcessingStage attributes
-        self._name = "MinHashStage"
+        self._name = self.__class__.__name__
         self._resources = Resources(gpus=1.0)  # Requires 1 GPU
 
         self.output_dir = output_dir
@@ -330,7 +330,7 @@ class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask]):
             FileGroupTask containing paths to minhash output files
         """
         fs = get_fs(self.output_dir, self.write_kwargs.get("storage_options", {}))
-        output_file = fs.sep.join([self.output_dir, "MinHashStage", f"{task.task_id}.parquet"])
+        output_file = fs.sep.join([self.output_dir, self._name, f"{task.task_id}.parquet"])
 
         read_kwargs = self.read_kwargs.copy()
         read_kwargs["storage_options"] = task._metadata.get("storage_options", {})
