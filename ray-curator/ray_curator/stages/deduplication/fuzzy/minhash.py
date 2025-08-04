@@ -63,7 +63,7 @@ class GPUMinHash(MinHash, DeduplicationIO):
         num_hashes: int = 260,
         char_ngrams: int = 24,
         use_64bit_hash: bool = False,
-        pool: bool = True,
+        pool: bool = False,
         id_generator: "IdGenerator | None" = None,
     ):
         # Initialize parent class
@@ -80,7 +80,8 @@ class GPUMinHash(MinHash, DeduplicationIO):
         )
 
         # Initialize memory pool for cuDF
-        rmm.reinitialize(pool_allocator=pool)
+        if pool:
+            rmm.reinitialize(pool_allocator=pool)
 
         # Generate seeds
         self.seeds = self.generate_seeds(
@@ -274,6 +275,7 @@ class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         read_format: Literal["jsonl", "parquet"] = "jsonl",
         read_kwargs: dict[str, Any] | None = None,
         write_kwargs: dict[str, Any] | None = None,
+        pool: bool = True,
     ):
         # Set ProcessingStage attributes
         self._name = self.__class__.__name__
@@ -289,7 +291,7 @@ class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         self.read_format = read_format
         self.read_kwargs = read_kwargs or {}
         self.write_kwargs = write_kwargs or {}
-
+        self.pool = pool
         # Initialize the minhash processor in setup
         self.minhash_processor = None
         self.id_generator = None
@@ -307,7 +309,7 @@ class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask]):
             num_hashes=self.num_hashes,
             char_ngrams=self.char_ngrams,
             use_64bit_hash=self.use_64bit_hash,
-            pool=True,
+            pool=self.pool,
             id_generator=self.id_generator,
         )
 
