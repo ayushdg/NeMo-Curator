@@ -56,15 +56,14 @@ class MinHash(ABC):
         """
 
 
-class GPUMinHash(MinHash, DeduplicationIO):
-    def __init__(  # noqa: PLR0913
+class GPUMinHash(MinHash):
+    def __init__(
         self,
         seed: int = 42,
         num_hashes: int = 260,
         char_ngrams: int = 24,
         use_64bit_hash: bool = False,
         pool: bool = False,
-        id_generator: "IdGenerator | None" = None,
     ):
         # Initialize parent class
         MinHash.__init__(
@@ -73,10 +72,6 @@ class GPUMinHash(MinHash, DeduplicationIO):
             num_hashes=num_hashes,
             char_ngrams=char_ngrams,
             use_64bit_hash=use_64bit_hash,
-        )
-        DeduplicationIO.__init__(
-            self,
-            id_generator=id_generator,
         )
 
         # Initialize memory pool for cuDF
@@ -165,56 +160,8 @@ class GPUMinHash(MinHash, DeduplicationIO):
         minhash_method = self.minhash64 if self.use_64bit_hash else self.minhash32
         return minhash_method(text_series)
 
-    def __call__(  # noqa: PLR0913
-        self,
-        infiles: str | list[str],
-        outfile: str,
-        text_column: str,
-        read_format: Literal["jsonl", "parquet"] = "jsonl",
-        read_kwargs: dict[str, Any] | None = None,
-        write_kwargs: dict[str, Any] | None = None,
-        columns: list[str] | None = None,
-        minhash_column: str = "_minhash_signature",
-    ):
-        """
-        Process an input file, compute minhashes, and write results to an output file.
-        Automatically adds a unique _curator_id field to each document if not present.
 
-        Parameters
-        ----------
-        infiles: str, list[str]
-            Path or list of paths to input file(s)
-        outfile: str
-            Path to output file (Parquet format)
-        read_func: Callable, optional
-            Function to read input file(s)
-        columns: list, optional
-            Columns to read from input file
-        text_column: str, optional
-            Column containing text to hash. If None, uses self.text_field
-        """
-        if columns is None:
-            columns = [text_column]
-
-        # Read input file based on format
-        if read_format == "jsonl":
-            df = self.read_jsonl(filepath=infiles, columns=columns, assign_id=True, **(read_kwargs or {}))
-        elif read_format == "parquet":
-            df = self.read_parquet(filepath=infiles, assign_id=True, **(read_kwargs or {}))
-        else:
-            msg = f"Unsupported read format: {read_format}"
-            raise ValueError(msg)
-
-        result_df = df[[CURATOR_DEDUP_ID_STR]]
-
-        # Compute minhashes on the text column and add to dataframe
-        result_df[minhash_column] = self.compute_minhashes(df[text_column])
-
-        # Write output file
-        self.write_parquet(df=result_df, filepath=outfile, **(write_kwargs or {}))
-
-
-class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask]):
+class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationIO):
     """
     ProcessingStage for computing MinHash signatures on documents for fuzzy deduplication.
 
@@ -277,6 +224,10 @@ class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         write_kwargs: dict[str, Any] | None = None,
         pool: bool = True,
     ):
+        # Initialize parent classes
+        ProcessingStage.__init__(self)
+        DeduplicationIO.__init__(self, id_generator=None)
+
         # Set ProcessingStage attributes
         self._name = self.__class__.__name__
         self._resources = Resources(gpus=1.0)  # Requires 1 GPU
@@ -310,7 +261,6 @@ class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask]):
             char_ngrams=self.char_ngrams,
             use_64bit_hash=self.use_64bit_hash,
             pool=self.pool,
-            id_generator=self.id_generator,
         )
 
     def inputs(self) -> tuple[list[str], list[str]]:
@@ -331,23 +281,31 @@ class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         Returns:
             FileGroupTask containing paths to minhash output files
         """
+
+        if self.minhash_processor is None or self.id_generator is None:
+            msg = "MinHash processor or ID generator not initialized. Call setup() first."
+            raise RuntimeError(msg)
+
         fs = get_fs(self.output_dir, self.write_kwargs.get("storage_options", {}))
         output_file = fs.sep.join([self.output_dir, self._name, f"{task.task_id}.parquet"])
 
         read_kwargs = self.read_kwargs.copy()
         read_kwargs["storage_options"] = task._metadata.get("storage_options", {})
 
-        # Process files
-        self.minhash_processor(
-            infiles=task.data,
-            outfile=output_file,
-            text_column=self.text_column,
-            read_format=self.read_format,  # type: ignore[arg-type]
-            read_kwargs=read_kwargs,
-            write_kwargs=self.write_kwargs,
-            columns=[self.text_column],
-            minhash_column=self.minhash_column,
-        )
+        # Read input file based on format
+        if self.read_format == "jsonl":
+            df = self.read_jsonl(filepath=task.data, columns=[self.text_column], assign_id=True, **read_kwargs)
+        elif self.read_format == "parquet":
+            df = self.read_parquet(filepath=task.data, columns=[self.text_column], assign_id=True, **read_kwargs)
+        else:
+            msg = f"Unsupported read format: {self.read_format}"
+            raise ValueError(msg)
+
+        result_df = df[[CURATOR_DEDUP_ID_STR]]
+        result_df[self.minhash_column] = self.minhash_processor.compute_minhashes(df[self.text_column])
+
+        # Write output file
+        self.write_parquet(df=result_df, filepath=output_file, **self.write_kwargs)
 
         # Return FileGroupTask with output file
         return FileGroupTask(
