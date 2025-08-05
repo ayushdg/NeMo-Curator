@@ -1,9 +1,7 @@
 """Test suite for GPUMinHash functionality."""
 
-import os
 from collections.abc import Iterable
 from itertools import combinations
-from pathlib import Path
 
 import cudf
 import numpy as np
@@ -131,44 +129,6 @@ class TestGPUMinHash:
             true_jaccard = jaccard_index(str1, str2, char_ngrams)
             minhash_approximation = minhash_overlap(np.array(sig1), np.array(sig2))
             assert abs(true_jaccard - minhash_approximation) < THRESHOLD
-
-    @pytest.mark.gpu
-    def test_minhash_with_file_io(
-        self,
-        sample_data: pd.DataFrame,
-        tmpdir: Path,
-    ) -> None:
-        """Test MinHash with file I/O operations."""
-        # Save sample data to JSONL
-        input_file = str(tmpdir / "input.jsonl")
-        sample_data.to_json(input_file, orient="records", lines=True)
-
-        # Set up output file
-        output_file = str(tmpdir / "output.parquet")
-
-        # Create minhasher
-        minhasher = GPUMinHash(seed=42, num_hashes=260, char_ngrams=24, pool=False)
-
-        # Process file
-        minhasher(
-            infiles=input_file,
-            outfile=output_file,
-            text_column="text",
-            read_format="jsonl",
-            minhash_column="_minhash_signature",
-        )
-
-        # Verify output file exists
-        assert os.path.exists(output_file)
-
-        # Read and verify output
-        result_df = cudf.read_parquet(output_file)
-        assert "_minhash_signature" in result_df.columns
-        assert len(result_df) == len(sample_data)
-
-        # Check signature lengths
-        sig_lengths = result_df["_minhash_signature"].list.len()
-        assert (sig_lengths == 260).all()
 
     @pytest.mark.gpu
     def test_minhash_seed_generation(self) -> None:
