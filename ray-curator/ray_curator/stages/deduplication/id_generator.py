@@ -5,6 +5,7 @@ import uuid
 import ray
 
 CURATOR_DEDUP_ID_STR = "_curator_dedup_id"
+CURATOR_ID_GENERATOR_ACTOR_NAME = "curator_deduplication_id_generator"
 
 
 @ray.remote
