@@ -111,3 +111,6 @@ fixable = ["ALL"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "gpu: marks tests as GPU tests (deselect with '-m \"not gpu\"')",
+]
