@@ -1,5 +1,6 @@
 """Test suite for MinHashStage."""
 
+# ruff: noqa: E402
 import os
 from pathlib import Path
 
@@ -7,14 +8,14 @@ import pandas as pd
 import pytest
 import ray
 
+cudf = pytest.importorskip("cudf", reason="MinHashStage tests require cudf")
+
 from ray_curator.stages.deduplication.fuzzy.minhash import MinHashStage
 from ray_curator.stages.deduplication.id_generator import (
     CURATOR_DEDUP_ID_STR,
     CURATOR_ID_GENERATOR_ACTOR_NAME,
 )
 from ray_curator.tasks import FileGroupTask
-
-cudf = pytest.importorskip("cudf", reason="MinHashStage tests require cudf")
 
 
 @pytest.fixture(scope="module")
