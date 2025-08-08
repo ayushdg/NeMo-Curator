@@ -3,12 +3,13 @@
 from collections.abc import Iterable
 from itertools import combinations
 
-import cudf
 import numpy as np
 import pandas as pd
 import pytest
 
 from ray_curator.stages.deduplication.fuzzy.minhash import GPUMinHash
+
+cudf = pytest.importorskip("cudf", reason="MinHash tests require cudf")
 
 
 def minhash_overlap(minhash1: np.ndarray, minhash2: np.ndarray) -> float:

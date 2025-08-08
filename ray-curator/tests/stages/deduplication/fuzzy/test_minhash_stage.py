@@ -3,7 +3,6 @@
 import os
 from pathlib import Path
 
-import cudf
 import pandas as pd
 import pytest
 import ray
@@ -14,6 +13,8 @@ from ray_curator.stages.deduplication.id_generator import (
     CURATOR_ID_GENERATOR_ACTOR_NAME,
 )
 from ray_curator.tasks import FileGroupTask
+
+cudf = pytest.importorskip("cudf", reason="MinHashStage tests require cudf")
 
 
 @pytest.fixture(scope="module")
