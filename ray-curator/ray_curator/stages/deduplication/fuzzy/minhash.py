@@ -165,7 +165,7 @@ class GPUMinHash(MinHash):
         return minhash_method(text_series)
 
 
-class GPUMinHashStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationIO):
+class MinHashStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationIO):
     """
     ProcessingStage for computing MinHash signatures on documents for fuzzy deduplication.
 

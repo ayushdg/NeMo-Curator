@@ -1,4 +1,4 @@
-"""Test suite for GPUMinHashStage."""
+"""Test suite for MinHashStage."""
 
 import os
 from pathlib import Path
@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 import ray
 
-from ray_curator.stages.deduplication.fuzzy.minhash import GPUMinHashStage
+from ray_curator.stages.deduplication.fuzzy.minhash import MinHashStage
 from ray_curator.stages.deduplication.id_generator import (
     CURATOR_DEDUP_ID_STR,
     CURATOR_ID_GENERATOR_ACTOR_NAME,
@@ -16,7 +16,7 @@ from ray_curator.stages.deduplication.id_generator import (
 from ray_curator.tasks import FileGroupTask
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def ray_fixture() -> None:
     """Initialize and shutdown Ray for tests."""
     ray.init(ignore_reinit_error=True)
@@ -118,8 +118,8 @@ def input_task(sample_files: tuple[list[str], str]) -> FileGroupTask:
 
 
 @pytest.mark.gpu
-class TestGPUMinHashStage:
-    """Test suite for GPUMinHashStage ProcessingStage."""
+class TestMinHashStage:
+    """Test suite for MinHashStage ProcessingStage."""
 
     @pytest.mark.parametrize("sample_files", ["jsonl", "parquet"], indirect=True)
     @pytest.mark.parametrize("use_64bit_hash", [False, True])
@@ -146,7 +146,7 @@ class TestGPUMinHashStage:
         read_format = input_task._metadata["format"]
 
         # Create stage
-        stage = GPUMinHashStage(
+        stage = MinHashStage(
             output_dir=str(tmp_path / f"output_{read_format}_{use_64bit_hash}_{num_hashes}"),
             text_column=text_column,
             minhash_column="_minhash_signature",
@@ -223,7 +223,7 @@ class TestGPUMinHashStage:
             task_id="bad_test", dataset_name="bad_dataset", data=[str(input_file)], _metadata={}
         )
 
-        stage = GPUMinHashStage(
+        stage = MinHashStage(
             output_dir=str(tmp_path / "output"),
             text_column="text",  # This column doesn't exist
             pool=False,
@@ -248,7 +248,7 @@ class TestGPUMinHashStage:
             task_id="empty_test", dataset_name="empty_dataset", data=[str(input_file)], _metadata={}
         )
 
-        stage = GPUMinHashStage(
+        stage = MinHashStage(
             output_dir=str(tmp_path / "output"),
             text_column="text",
             pool=False,
@@ -260,7 +260,7 @@ class TestGPUMinHashStage:
 
     def test_process_without_setup(self, tmp_path: Path) -> None:
         """Test that process raises error if setup wasn't called."""
-        stage = GPUMinHashStage(
+        stage = MinHashStage(
             output_dir=str(tmp_path),
             text_column="text",
         )
@@ -295,7 +295,7 @@ class TestGPUMinHashStage:
             task_id="large_test", dataset_name="large_dataset", data=[str(input_file)], _metadata={}
         )
 
-        stage = GPUMinHashStage(
+        stage = MinHashStage(
             output_dir=str(tmp_path / "output"),
             text_column="text",
             num_hashes=128,
@@ -337,7 +337,7 @@ class TestGPUMinHashStage:
             task_id="special_test", dataset_name="special_dataset", data=[str(input_file)], _metadata={}
         )
 
-        stage = GPUMinHashStage(
+        stage = MinHashStage(
             output_dir=str(tmp_path / "output"),
             text_column="text",
             num_hashes=64,
@@ -369,7 +369,7 @@ class TestGPUMinHashStage:
     def test_setup_idempotency(self, tmp_path: Path) -> None:
         """Test that calling setup multiple times doesn't cause issues and IDs continue from where they left off."""
         # Create first stage
-        stage1 = GPUMinHashStage(
+        stage1 = MinHashStage(
             output_dir=str(tmp_path / "output1"),
             text_column="text",
             pool=False,
@@ -398,7 +398,7 @@ class TestGPUMinHashStage:
         assert len(ids_batch1) == 3
 
         # Create second stage (different instance)
-        stage2 = GPUMinHashStage(
+        stage2 = MinHashStage(
             output_dir=str(tmp_path / "output2"),
             text_column="text",
             pool=False,
