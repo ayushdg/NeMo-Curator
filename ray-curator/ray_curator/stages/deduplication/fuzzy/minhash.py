@@ -294,7 +294,6 @@ class MinHashStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationI
         output_file = fs.sep.join([self.output_dir, self._name, f"{task.task_id}.parquet"])
 
         read_kwargs = self.read_kwargs.copy()
-        read_kwargs["storage_options"] = task._metadata.get("storage_options", {})
 
         # Read input file based on format
         if self.read_format == "jsonl":
