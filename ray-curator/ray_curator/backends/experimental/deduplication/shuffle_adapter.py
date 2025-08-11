@@ -2,14 +2,17 @@
 """Shuffle adapter for deduplication executor."""
 
 import math
+from typing import TYPE_CHECKING
 
 import ray
 from loguru import logger
 
 from ray_curator.backends.base import BaseStageAdapter
 from ray_curator.backends.experimental.utils import get_worker_metadata_and_node_id
-from ray_curator.stages.deduplication.fuzzy.lsh.stage import LSHProcessingStage
 from ray_curator.tasks import FileGroupTask
+
+if TYPE_CHECKING:
+    from ray_curator.stages.deduplication.fuzzy.lsh.stage import LSHStage
 
 
 @ray.remote
@@ -22,7 +25,7 @@ class ShuffleStageAdapter(BaseStageAdapter):
 
     def __init__(
         self,
-        stage: LSHProcessingStage,
+        stage: "LSHStage",
         rank: int,
         nranks: int,
         num_input_tasks: int | None = None,
@@ -100,11 +103,11 @@ class ShuffleStageAdapter(BaseStageAdapter):
             logger.warning(f"Root address mismatch during worker setup: {self.root_address} != {root_address}")
         self.stage._actor_obj.setup_worker(root_address)
 
-    def read_and_insert(self, tasks: list[FileGroupTask]) -> list[FileGroupTask]:
+    def read_and_insert(self, tasks: list[FileGroupTask], band_range: tuple[int, int]) -> list[FileGroupTask]:
         """Read and insert tasks into the shuffler."""
         results = []
         for task in tasks:
-            results.append(self.stage.read_and_insert(task))
+            results.append(self.stage.read_and_insert(task, band_range))
         return results
 
     def insert_finished(self) -> None:

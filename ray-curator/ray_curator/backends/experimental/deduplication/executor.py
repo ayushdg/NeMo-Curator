@@ -1,6 +1,9 @@
 # Copyright (c) 2025, NVIDIA CORPORATION.
 """Deduplication executor that handles shuffle stages with actor pools."""
 
+import math
+import os
+import time
 from typing import TYPE_CHECKING, Any
 
 import ray
@@ -10,7 +13,7 @@ from ray.util.actor_pool import ActorPool
 from ray_curator.backends.base import BaseExecutor
 from ray_curator.backends.experimental.ray_data.utils import execute_setup_on_node
 from ray_curator.backends.utils import register_loguru_serializer
-from ray_curator.stages.deduplication.fuzzy.lsh.stage import LSHProcessingStage
+from ray_curator.stages.deduplication.fuzzy.lsh.stage import LSHStage
 from ray_curator.tasks import EmptyTask, Task
 
 from .adapter import RayActorPoolStageAdapter
@@ -63,6 +66,7 @@ class DeduplicationExecutor(BaseExecutor):
 
             # Initialize with initial tasks
             current_tasks = initial_tasks or [EmptyTask]
+
             # Process through each stage with ActorPool
             for i, stage in enumerate(stages):
                 logger.info(f"\nProcessing stage {i + 1}/{len(stages)}: {stage}")
@@ -72,31 +76,27 @@ class DeduplicationExecutor(BaseExecutor):
                     msg = f"{stage} - No tasks to process, can't continue"
                     raise ValueError(msg)  # noqa: TRY301
 
-                # Create actor pool for this stage
-                num_actors = self._calculate_optimal_actors(
-                    stage,
-                    len(current_tasks),
-                    reserved_cpus=self.config.get("reserved_cpus", 0.0),
-                    reserved_gpus=self.config.get("reserved_gpus", 0.0),
-                )
-                logger.info(
-                    f" {stage} - Creating {num_actors} actors (CPUs: {stage.resources.cpus}, GPUs: {stage.resources.gpus})"
-                )
-
-                # Check if this is a LSHProcessingStage and create appropriate actor pool
-                if isinstance(stage, LSHProcessingStage):
-                    logger.info(f"  Creating RapidsMPFShuffling Actor Pool for stage: {stage.name}")
-                    actors = self._create_rapidsmpf_actors(stage, num_actors, len(current_tasks))
-                    current_tasks = self._process_stage_with_rapidsmpf_actors(actors, stage, current_tasks)
+                # Check if this is an LSHStage
+                if isinstance(stage, LSHStage):
+                    current_tasks = self._execute_lsh_stage(stage, current_tasks)
                 else:
+                    # Normal processing for non-LSH stages
+                    num_actors = self._calculate_optimal_actors(
+                        stage,
+                        len(current_tasks),
+                        reserved_cpus=self.config.get("reserved_cpus", 0.0),
+                        reserved_gpus=self.config.get("reserved_gpus", 0.0),
+                    )
+                    logger.info(
+                        f" {stage} - Creating {num_actors} actors (CPUs: {stage.resources.cpus}, GPUs: {stage.resources.gpus})"
+                    )
+
                     actor_pool = self._create_actor_pool(stage, num_actors)
                     # Process tasks through this stage using ActorPool
                     current_tasks = self._process_stage_with_pool(actor_pool, stage, current_tasks)
-
-                # Clean up actor pool
-                self._cleanup_actor_pool(actor_pool)
-
-                logger.info(f"Output tasks: {len(current_tasks)}")
+                    # Clean up actor pool
+                    self._cleanup_actor_pool(actor_pool)
+                    logger.info(f"Output tasks: {len(current_tasks)}")
 
         except Exception as e:
             logger.error(f"Error during pipeline execution: {e}")
@@ -121,6 +121,7 @@ class DeduplicationExecutor(BaseExecutor):
     ) -> int:
         """Calculate optimal number of actors for a stage."""
         # Get available resources (not total cluster resources)
+        time.sleep(0.2)
         available_resources = ray.available_resources()
         available_cpus = available_resources.get("CPU", 0)
         available_gpus = available_resources.get("GPU", 0)
@@ -141,7 +142,7 @@ class DeduplicationExecutor(BaseExecutor):
         max_actors_resources = min(max_actors_resources, stage.num_workers() or _LARGE_INT)
 
         # Don't create more actors than tasks
-        optimal_actors = min(num_tasks, max_actors_resources)
+        optimal_actors = min(math.ceil(num_tasks / stage.batch_size), max_actors_resources)
 
         # Ensure at least 1 actor if we have tasks
         optimal_actors = max(1, optimal_actors) if num_tasks > 0 else 0
@@ -194,13 +195,18 @@ class DeduplicationExecutor(BaseExecutor):
         return actors
 
     def _process_stage_with_rapidsmpf_actors(
-        self, actors: list[ray.actor.ActorHandle], _stage: "ProcessingStage", tasks: list[Task]
+        self,
+        actors: list[ray.actor.ActorHandle],
+        _stage: "ProcessingStage",
+        tasks: list[Task],
+        band_range: tuple[int, int],
     ) -> list[Task]:
         """Process Shuffle through the actors.
         Args:
             actors: The actors to use for processing
             _stage: The processing stage (for logging/context, unused)
             tasks: List of Task objects to process
+            band_range: Band range for LSH shuffle
         Returns:
             List of processed Task objects
         """
@@ -210,7 +216,11 @@ class DeduplicationExecutor(BaseExecutor):
         task_batches = self._generate_task_batches(tasks, stage_batch_size)
 
         # Step 1: Insert tasks into shuffler
-        _ = list(actor_pool.map_unordered(lambda actor, batch: actor.read_and_insert.remote(batch), task_batches))
+        _ = list(
+            actor_pool.map_unordered(
+                lambda actor, batch: actor.read_and_insert.remote(tasks=batch, band_range=band_range), task_batches
+            )
+        )
 
         # Step 2: Signal to all actors that insertion is complete
         _ = ray.get([actor.insert_finished.remote() for actor in actors])
@@ -271,3 +281,59 @@ class DeduplicationExecutor(BaseExecutor):
                 ray.kill(actor)
             except (ray.exceptions.RayActorError, ray.exceptions.RaySystemError) as e:  # noqa: PERF203
                 logger.warning(f"      Warning: Error cleaning up actor {i}: {e}")
+
+    def _cleanup_actors(self, actors: list[ray.actor.ActorHandle]) -> None:
+        """Clean up a list of actors."""
+        for i, actor in enumerate(actors):
+            try:
+                ray.get(actor.teardown.remote())
+                ray.kill(actor)
+            except (ray.exceptions.RayActorError, ray.exceptions.RaySystemError) as e:  # noqa: PERF203
+                logger.warning(f"      Warning: Error cleaning up actor {i}: {e}")
+
+    def _execute_lsh_stage(self, stage: LSHStage, input_tasks: list[Task]) -> list[Task]:
+        """Execute an LSH stage with band iteration.
+
+        Args:
+            stage: The LSH stage to execute
+            input_tasks: Input tasks to process
+
+        Returns:
+            List of output tasks from all band iterations
+        """
+        all_lsh_outputs = []
+        original_input = input_tasks.copy()
+
+        for band_range in stage.get_band_iterations():
+            logger.info(f"  Processing band range: {band_range[0]}-{band_range[1]}")
+
+            # Create output path for this band range
+            output_path = os.path.join(stage.output_dir, f"{stage.name}", f"band_{band_range[0]}-band_{band_range[1]}")
+            os.makedirs(output_path, exist_ok=True)
+
+            # Update actor kwargs with band-specific output path
+            stage.actor_kwargs["output_path"] = output_path
+
+            # Create actors for this band range
+            num_actors = self._calculate_optimal_actors(
+                stage,
+                len(original_input),
+                reserved_cpus=self.config.get("reserved_cpus", 0.0),
+                reserved_gpus=self.config.get("reserved_gpus", 0.0),
+            )
+            logger.info(
+                f" {stage} - Creating {num_actors} actors (CPUs: {stage.resources.cpus}, GPUs: {stage.resources.gpus})"
+            )
+
+            logger.info(f"  Creating RapidsMPFShuffling Actor Pool for stage: {stage.name}")
+            actors = self._create_rapidsmpf_actors(stage, num_actors, len(original_input))
+
+            # Process with original input and band range
+            outputs = self._process_stage_with_rapidsmpf_actors(actors, stage, original_input, band_range)
+            all_lsh_outputs.extend(outputs)
+
+            # Clean up actors
+            self._cleanup_actors(actors)
+
+        logger.info(f"  LSH processing complete. Output tasks: {len(all_lsh_outputs)}")
+        return all_lsh_outputs
