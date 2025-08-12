@@ -1,6 +1,8 @@
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any
 
+from ray_curator.backends.experimental.utils import RayStageSpecKeys
 from ray_curator.stages.base import ProcessingStage
 from ray_curator.stages.deduplication.fuzzy.lsh.lsh import LSHActor
 from ray_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR
@@ -22,12 +24,16 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     # Core Algo objects
     actor_class = LSHActor
 
-    # LSH parameters
-    num_bands: int
-    minhashes_per_band: int
+    # Data parameters
     id_column: str = CURATOR_DEDUP_ID_STR
     minhash_field: str = "_minhash_signature"
     output_dir: str = "./"
+    read_kwargs: dict[str, Any] | None = None
+    write_kwargs: dict[str, Any] | None = None
+    # LSH parameters
+    num_bands: int
+    minhashes_per_band: int
+    # Shuffle parameters
     rmm_pool_size: int = 1024 * 1024 * 1024
     spill_device: int | str | None = "auto"
     enable_statistics: bool = False
@@ -44,6 +50,8 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
             "rmm_pool_size": self.rmm_pool_size,
             "spill_device": self.spill_device,
             "enable_statistics": self.enable_statistics,
+            "read_kwargs": self.read_kwargs if self.read_kwargs is not None else {},
+            "write_kwargs": self.write_kwargs if self.write_kwargs is not None else {},
         }
 
         if self.bands_per_iteration < 1 or self.bands_per_iteration > self.num_bands:
@@ -55,6 +63,12 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     def process(self, task: FileGroupTask) -> FileGroupTask:
         err_msg = "LSHProcessingStage does not support the process method."
         raise NotImplementedError(err_msg)
+
+    def ray_stage_spec(self) -> dict[str, Any]:
+        """Ray stage specification for this stage."""
+        return {
+            RayStageSpecKeys.IS_LSH_STAGE: True,
+        }
 
     def _check_actor_obj(self) -> None:
         if not hasattr(self, "_actor_obj") or not isinstance(self._actor_obj, self.actor_class):

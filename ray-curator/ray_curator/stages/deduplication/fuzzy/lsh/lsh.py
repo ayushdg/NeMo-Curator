@@ -7,7 +7,7 @@ This module implements a Locality Sensitive Hashing (LSH) actor for Ray that inh
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import cudf
 from rapidsmpf.utils.cudf import pylibcudf_to_cudf_dataframe
@@ -92,6 +92,8 @@ class LSHActor(BulkRapidsMPFShuffler):
         spill_device: int | str | None = "auto",
         *,
         enable_statistics: bool = False,
+        read_kwargs: dict[str, Any] | None = None,
+        write_kwargs: dict[str, Any] | None = None,
     ):
         super().__init__(
             nranks=nranks,
@@ -106,6 +108,8 @@ class LSHActor(BulkRapidsMPFShuffler):
         self.minhashes_per_band = minhashes_per_band
         self.id_column = id_column
         self.minhash_field = minhash_field
+        self.read_kwargs = read_kwargs if read_kwargs is not None else {}
+        self.write_kwargs = write_kwargs if write_kwargs is not None else {}
 
     @staticmethod
     def _generate_band_ranges(num_bands: int, minhashes_per_band: int) -> list[list[int]]:
@@ -130,7 +134,10 @@ class LSHActor(BulkRapidsMPFShuffler):
         -------
             DataFrame containing minhash data from all input files.
         """
-        return cudf.read_parquet(filepaths, columns=[self.id_column, self.minhash_field])
+        if self.read_kwargs.get("columns", None) is not None:
+            err_msg = "Columns cannot be set in read_kwargs for LSHActor"
+            raise ValueError(err_msg)
+        return cudf.read_parquet(filepaths, columns=[self.id_column, self.minhash_field], **self.read_kwargs)
 
     def minhash_to_bands(self, minhash_df: cudf.DataFrame, band_range: tuple[int, int]) -> cudf.DataFrame:
         """
@@ -280,12 +287,14 @@ class LSHActor(BulkRapidsMPFShuffler):
         one partition at a time rather than collecting all partitions in memory.
         """
         partition_paths = []
+        write_kwargs = self.write_kwargs.copy()
+        write_kwargs["index"] = write_kwargs.get("index", False)
         # Process each partition as it becomes available
         for partition_id, grouped_df in self.extract_and_group():
             path = f"{self.output_path}/part.{partition_id}.parquet"
 
             # Write to file immediately
-            grouped_df.to_parquet(path, index=False)
+            grouped_df.to_parquet(path, **write_kwargs)
             partition_paths.append((partition_id, path))
             # Clean up to release memory
             del grouped_df
