@@ -73,7 +73,7 @@ class RayActorPoolExecutor(BaseExecutor):
                     msg = f"{stage} - No tasks to process, can't continue"
                     raise ValueError(msg)  # noqa: TRY301
 
-                if stage.name == "LSHStage":
+                if stage.ray_stage_spec().get(RayStageSpecKeys.IS_LSH_STAGE, False):
                     current_tasks = self._execute_lsh_stage(stage, current_tasks)
                 else:
                     # Create actor pool for this stage
