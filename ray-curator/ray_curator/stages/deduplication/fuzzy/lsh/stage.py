@@ -24,15 +24,15 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     # Core Algo objects
     actor_class = LSHActor
 
+    # LSH parameters
+    num_bands: int
+    minhashes_per_band: int
     # Data parameters
     id_column: str = CURATOR_DEDUP_ID_STR
     minhash_field: str = "_minhash_signature"
     output_dir: str = "./"
     read_kwargs: dict[str, Any] | None = None
     write_kwargs: dict[str, Any] | None = None
-    # LSH parameters
-    num_bands: int
-    minhashes_per_band: int
     # Shuffle parameters
     rmm_pool_size: int = 1024 * 1024 * 1024
     spill_device: int | str | None = "auto"
