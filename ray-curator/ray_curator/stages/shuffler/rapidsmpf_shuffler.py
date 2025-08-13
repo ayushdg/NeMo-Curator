@@ -17,7 +17,7 @@ from rapidsmpf.statistics import Statistics
 from rapidsmpf.utils.cudf import cudf_to_pylibcudf_table, pylibcudf_to_cudf_dataframe
 from rapidsmpf.utils.ray_utils import BaseShufflingActor
 
-from ray_curator.stages.deduplication.gpu_utils import align_memory
+from ray_curator.stages.deduplication.gpu_utils import align_down_to_256
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -41,10 +41,12 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
         Path to write output files.
     rmm_pool_size
         Size of the RMM memory pool in bytes.
-    spill_device
-        Device memory limit for spilling to host in bytes.
+    spill_memory_limit
+        Device memory limit in bytes for spilling to host.
+        If "auto", the limit is set to 80% of the RMM pool size.
+        If None spilling is disabled.
     enable_statistics
-        Whether to collect statistics.
+        Whether to collect shuffle statistics.
     """
 
     def __init__(  # noqa: PLR0913
@@ -54,7 +56,7 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
         shuffle_on: list[str],
         output_path: str = "./",
         rmm_pool_size: int = 1024 * 1024 * 1024,
-        spill_device: int | Literal["auto"] | None = "auto",
+        spill_memory_limit: int | Literal["auto"] | None = "auto",
         *,
         enable_statistics: bool = False,
     ):
@@ -62,16 +64,16 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
         self.shuffle_on = shuffle_on
         self.output_path = output_path
         self.total_nparts = total_nparts
-        self.rmm_pool_size = align_memory(rmm_pool_size)
+        self.rmm_pool_size = align_down_to_256(rmm_pool_size)
 
-        if isinstance(spill_device, int):
-            self.spill_device = align_memory(spill_device)
-        elif spill_device == "auto":
-            self.spill_device = align_memory(0.8 * self.rmm_pool_size)
-        elif spill_device is None:
-            self.spill_device = None
+        if isinstance(spill_memory_limit, int):
+            self.spill_memory_limit = align_down_to_256(spill_memory_limit)
+        elif spill_memory_limit == "auto":
+            self.spill_memory_limit = align_down_to_256(0.8 * self.rmm_pool_size)
+        elif spill_memory_limit is None:
+            self.spill_memory_limit = None
         else:
-            err_msg = f"Invalid spill_device: {spill_device}"
+            err_msg = f"Invalid spill_memory_limit: {spill_memory_limit}"
             raise ValueError(err_msg)
 
         self.enable_statistics = enable_statistics
@@ -96,11 +98,11 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
             )
         )
         rmm.mr.set_current_device_resource(mr)
-        # Create a buffer resource that limits device memory if `--spill-device`
+        # Create a buffer resource that limits device memory if spill_memory_limit is set
         memory_available = (
             None
-            if self.spill_device is None
-            else {MemoryType.DEVICE: LimitAvailableMemory(mr, limit=self.spill_device)}
+            if self.spill_memory_limit is None
+            else {MemoryType.DEVICE: LimitAvailableMemory(mr, limit=self.spill_memory_limit)}
         )
         br = BufferResource(mr, memory_available)
         # Create a statistics object

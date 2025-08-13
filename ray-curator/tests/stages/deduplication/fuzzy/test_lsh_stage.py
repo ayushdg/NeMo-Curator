@@ -71,7 +71,7 @@ class TestLSHStage:
             num_bands=3,
             minhashes_per_band=2,  # num_hashes=6 / num_buckets=3
             bands_per_iteration=bands_per_iteration,
-            minhash_field="_minhash_signature",
+            minhash_column="_minhash_signature",
             id_column=CURATOR_DEDUP_ID_STR,
         )
 
@@ -99,6 +99,55 @@ class TestLSHStage:
         found_pairs = {tuple(sorted(group)) for group in grouped_docs}
         expected_pairs = {(1, 2), (2, 3), (4, 5)}
         assert found_pairs == expected_pairs, f"Expected pairs {expected_pairs} not found in {found_pairs}"
+
+    def test_overwrite_existing_output_dir(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Test that LSH stage overwrites existing output directory."""
+        output_dir = str(tmp_path / "lsh_output")
+
+        stage_name = LSHStage._name
+
+        # Create the output subdirectory structure and add some dummy files
+        output_base_dir = os.path.join(output_dir, stage_name)
+        os.makedirs(output_base_dir, exist_ok=True)
+        dummy_file = os.path.join(output_base_dir, "dummy_file.txt")
+        with open(dummy_file, "w") as f:
+            f.write("This file should be deleted")
+
+        # Also create a band subdirectory with a file
+        band_dir = os.path.join(output_base_dir, "band_0-band_3")
+        os.makedirs(band_dir, exist_ok=True)
+        band_file = os.path.join(band_dir, "band_data.parquet")
+        with open(band_file, "w") as f:
+            f.write("Band data")
+
+        # Verify the files exist
+        assert os.path.exists(dummy_file), "Dummy file should exist before creating new LSH stage"
+        assert os.path.exists(band_file), "Band file should exist before creating new LSH stage"
+
+        # Create a new LSHStage - this should trigger the overwrite behavior
+        LSHStage(
+            output_dir=output_dir,
+            num_bands=3,
+            minhashes_per_band=2,
+            bands_per_iteration=3,
+            minhash_column="_minhash_signature",
+            id_column=CURATOR_DEDUP_ID_STR,
+        )
+
+        # Verify that the original files no longer exist (directory was cleaned)
+        assert not os.path.exists(dummy_file), "Dummy file should have been deleted during overwrite"
+        assert not os.path.exists(band_file), "Band file should have been deleted during overwrite"
+
+        # Verify that the output directory structure was recreated
+        assert os.path.exists(output_base_dir), "LSH output base directory should exist"
+
+        # Verify band subdirectories were created fresh
+        expected_band_dirs = [os.path.join(output_base_dir, "band_0-band_3")]
+        for band_dir in expected_band_dirs:
+            assert os.path.exists(band_dir), f"Band directory {band_dir} should exist"
 
     def test_custom_column_names(
         self,
@@ -142,7 +191,7 @@ class TestLSHStage:
             minhashes_per_band=2,
             bands_per_iteration=3,
             id_column="document_id",  # Custom ID column
-            minhash_field="signature",  # Custom minhash column
+            minhash_column="signature",  # Custom minhash column
         )
 
         # Create pipeline and executor
@@ -211,7 +260,7 @@ class TestLSHStage:
             minhashes_per_band=1,  # num_hashes=5 / num_buckets=5
             bands_per_iteration=1,
             id_column=CURATOR_DEDUP_ID_STR,
-            minhash_field="_minhash_signature",
+            minhash_column="_minhash_signature",
         )
 
         # Create pipeline and executor
@@ -270,7 +319,7 @@ class TestLSHStage:
             minhashes_per_band=1,
             bands_per_iteration=1,
             id_column=CURATOR_DEDUP_ID_STR,
-            minhash_field="_minhash_signature",
+            minhash_column="_minhash_signature",
         )
 
         # Create pipeline and executor
@@ -311,7 +360,7 @@ class TestLSHStage:
             minhashes_per_band=2,
             bands_per_iteration=1,
             id_column=CURATOR_DEDUP_ID_STR,
-            minhash_field="_minhash_signature",
+            minhash_column="_minhash_signature",
         )
 
         # Try to call methods without actor object initialized

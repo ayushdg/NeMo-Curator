@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 
@@ -19,6 +19,34 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     Stage that performs LSH on a FileGroupTask containing minhash data.
 
     The executor will process this stage in iterations based on bands_per_iteration.
+
+    Parameters
+    ----------
+    num_bands
+        Number of LSH bands.
+    minhashes_per_band
+        Number of minhashes per band.
+    id_column
+        Name of the ID column in input data.
+    minhash_column
+        Name of the minhash column in input data.
+    output_dir
+        Directory to write output files.
+    read_kwargs
+        Keyword arguments for the read method.
+    write_kwargs
+        Keyword arguments for the write method.
+    rmm_pool_size
+        Size of the RMM GPU memory pool in bytes.
+    spill_memory_limit
+        Device memory limit in bytes for spilling to host.
+        If "auto", the limit is set to 80% of the RMM pool size.
+        If None spilling is disabled.
+    enable_statistics
+        Whether to collect statistics.
+    bands_per_iteration
+        Number of bands to process per shuffle iteration. Between 1 and num_bands.
+        Higher values reduce the number of shuffle iterations but increase the memory usage.
     """
 
     _name = "LSHStage"
@@ -32,13 +60,13 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     minhashes_per_band: int
     # Data parameters
     id_column: str = CURATOR_DEDUP_ID_STR
-    minhash_field: str = "_minhash_signature"
+    minhash_column: str = "_minhash_signature"
     output_dir: str = "./"
     read_kwargs: dict[str, Any] | None = None
     write_kwargs: dict[str, Any] | None = None
     # Shuffle parameters
     rmm_pool_size: int = 1024 * 1024 * 1024
-    spill_device: int | str | None = "auto"
+    spill_memory_limit: int | Literal["auto"] | None = "auto"
     enable_statistics: bool = False
     bands_per_iteration: int = 5  # number of bands to process in each iteration
 
@@ -53,9 +81,9 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
             "num_bands": self.num_bands,
             "minhashes_per_band": self.minhashes_per_band,
             "id_column": self.id_column,
-            "minhash_field": self.minhash_field,
+            "minhash_column": self.minhash_column,
             "rmm_pool_size": self.rmm_pool_size,
-            "spill_device": self.spill_device,
+            "spill_memory_limit": self.spill_memory_limit,
             "enable_statistics": self.enable_statistics,
             "read_kwargs": self.read_kwargs,
             "write_kwargs": self.write_kwargs,

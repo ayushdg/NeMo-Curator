@@ -6,7 +6,7 @@ This module implements a Locality Sensitive Hashing (LSH) actor for Ray that inh
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import cudf
 from rapidsmpf.utils.cudf import pylibcudf_to_cudf_dataframe
@@ -28,24 +28,28 @@ class LSHActor(BulkRapidsMPFShuffler):
         Number of ranks in the communication group.
     total_nparts
         Total number of output partitions.
-    shuffle_on
-        List of column names to shuffle on.
     num_bands
         Number of LSH bands.
     minhashes_per_band
         Number of minhashes per band.
     id_column
         Name of the ID column in input data.
-    minhash_field
-        Name of the minhash field in input data.
+    minhash_column
+        Name of the minhash column in input data.
     output_path
         Path to write output files.
     rmm_pool_size
         Size of the RMM memory pool in bytes.
-    spill_device
-        Device memory limit for spilling to host in bytes.
+    spill_memory_limit
+        Device memory limit in bytes for spilling to host.
+        If "auto", the limit is set to 80% of the RMM pool size.
+        If None spilling is disabled.
     enable_statistics
         Whether to collect statistics.
+    read_kwargs
+        Keyword arguments for the read method.
+    write_kwargs
+        Keyword arguments for the write method.
 
     Notes
     -----
@@ -79,10 +83,10 @@ class LSHActor(BulkRapidsMPFShuffler):
         num_bands: int,
         minhashes_per_band: int,
         id_column: str = CURATOR_DEDUP_ID_STR,
-        minhash_field: str = "_minhash_signature",
+        minhash_column: str = "_minhash_signature",
         output_path: str = "./",
         rmm_pool_size: int = 1024 * 1024 * 1024,
-        spill_device: int | str | None = "auto",
+        spill_memory_limit: int | Literal["auto"] | None = "auto",
         *,
         enable_statistics: bool = False,
         read_kwargs: dict[str, Any] | None = None,
@@ -94,13 +98,13 @@ class LSHActor(BulkRapidsMPFShuffler):
             shuffle_on=["_bucket_id"],  # TODO: Move to a constant
             output_path=output_path,
             rmm_pool_size=rmm_pool_size,
-            spill_device=spill_device,
+            spill_memory_limit=spill_memory_limit,
             enable_statistics=enable_statistics,
         )
         self.num_bands = num_bands
         self.minhashes_per_band = minhashes_per_band
         self.id_column = id_column
-        self.minhash_field = minhash_field
+        self.minhash_column = minhash_column
         self.read_kwargs = read_kwargs if read_kwargs is not None else {}
         self.write_kwargs = write_kwargs if write_kwargs is not None else {}
 
@@ -130,7 +134,7 @@ class LSHActor(BulkRapidsMPFShuffler):
         if self.read_kwargs.get("columns", None) is not None:
             err_msg = "Columns cannot be set in read_kwargs for LSHActor"
             raise ValueError(err_msg)
-        return cudf.read_parquet(filepaths, columns=[self.id_column, self.minhash_field], **self.read_kwargs)
+        return cudf.read_parquet(filepaths, columns=[self.id_column, self.minhash_column], **self.read_kwargs)
 
     def minhash_to_bands(self, minhash_df: cudf.DataFrame, band_range: tuple[int, int]) -> cudf.DataFrame:
         """
@@ -160,7 +164,7 @@ class LSHActor(BulkRapidsMPFShuffler):
 
         for i, h in enumerate(band_ranges):
             indices = cudf.Series([h]).repeat(len(id_df))
-            id_df[f"_bucket_{i}"] = f"b{i}_" + minhash_df[self.minhash_field].list.take(indices).hash_values(
+            id_df[f"_bucket_{i}"] = f"b{i}_" + minhash_df[self.minhash_column].list.take(indices).hash_values(
                 method="md5"
             )
 
