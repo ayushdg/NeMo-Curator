@@ -2,12 +2,15 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
+from loguru import logger
+
 from ray_curator.backends.experimental.utils import RayStageSpecKeys
 from ray_curator.stages.base import ProcessingStage
 from ray_curator.stages.deduplication.fuzzy.lsh.lsh import LSHActor
 from ray_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR
 from ray_curator.stages.resources import Resources
 from ray_curator.tasks import FileGroupTask
+from ray_curator.utils.file_utils import delete_dir, get_fs, is_not_empty
 
 
 @dataclass
@@ -42,6 +45,10 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     def __post_init__(self):
         super().__init__()
 
+        self.read_kwargs = self.read_kwargs if self.read_kwargs is not None else {}
+        self.write_kwargs = self.write_kwargs if self.write_kwargs is not None else {}
+        self.output_paths = []
+
         self.actor_kwargs = {
             "num_bands": self.num_bands,
             "minhashes_per_band": self.minhashes_per_band,
@@ -50,8 +57,8 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
             "rmm_pool_size": self.rmm_pool_size,
             "spill_device": self.spill_device,
             "enable_statistics": self.enable_statistics,
-            "read_kwargs": self.read_kwargs if self.read_kwargs is not None else {},
-            "write_kwargs": self.write_kwargs if self.write_kwargs is not None else {},
+            "read_kwargs": self.read_kwargs,
+            "write_kwargs": self.write_kwargs,
         }
 
         if self.bands_per_iteration < 1 or self.bands_per_iteration > self.num_bands:
@@ -59,6 +66,19 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
                 f"Invalid bands_per_iteration: {self.bands_per_iteration}, must be in range [1, {self.num_bands}]"
             )
             raise ValueError(err_msg)
+
+        # Handle output directory and subdirectories
+        output_fs = get_fs(self.output_dir, storage_options=self.write_kwargs.get("storage_options", {}))
+        output_base_dir = output_fs.sep.join([self.output_dir, self.name])
+
+        if is_not_empty(output_base_dir, output_fs):
+            logger.warning(f"Output directory {output_base_dir} is not empty. Deleting it.")
+            delete_dir(output_base_dir, output_fs)
+
+        for band_range in self.get_band_iterations():
+            output_dir = output_fs.sep.join([output_base_dir, f"band_{band_range[0]}-band_{band_range[1]}"])
+            output_fs.makedirs(output_dir)
+            self.output_paths.append(output_dir)
 
     def process(self, task: FileGroupTask) -> FileGroupTask:
         err_msg = "LSHProcessingStage does not support the process method."

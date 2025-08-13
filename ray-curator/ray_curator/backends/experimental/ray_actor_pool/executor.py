@@ -1,4 +1,3 @@
-import os
 import uuid
 from typing import TYPE_CHECKING
 
@@ -308,17 +307,12 @@ class RayActorPoolExecutor(BaseExecutor):
         all_lsh_outputs = []
         original_input = input_tasks.copy()
 
-        for band_range in stage.get_band_iterations():
+        for i, band_range in enumerate(stage.get_band_iterations()):
             logger.info(f"  Processing band range: {band_range[0]}-{band_range[1]}")
 
-            # Create output path for this band range
-            output_path = os.path.join(stage.output_dir, f"{stage.name}", f"band_{band_range[0]}-band_{band_range[1]}")
-            os.makedirs(output_path, exist_ok=True)
-
-            # Update actor kwargs with band-specific output path
+            output_path = stage.output_paths[i]
             stage.actor_kwargs["output_path"] = output_path
 
-            # Create actors for this band range
             num_actors = calculate_optimal_actors_for_stage(
                 stage,
                 len(original_input),
@@ -332,7 +326,6 @@ class RayActorPoolExecutor(BaseExecutor):
             logger.info(f"  Creating RapidsMPFShuffling Actor Pool for stage: {stage.name}")
             actors = self._create_rapidsmpf_actors(stage, num_actors, len(original_input))
 
-            # Process with original input and band range
             outputs = self._process_lsh_stage_with_rapidsmpf_actors(actors, stage, original_input, band_range)
             all_lsh_outputs.extend(outputs)
 
