@@ -1,9 +1,12 @@
+# ruff: noqa: E402
+
 import os
 from pathlib import Path
 
-import cudf
 import pytest
 import ray
+
+cudf = pytest.importorskip("cudf", reason="MinHashStage tests require cudf")
 
 from ray_curator.backends.experimental.ray_actor_pool import RayActorPoolExecutor
 from ray_curator.pipeline import Pipeline
