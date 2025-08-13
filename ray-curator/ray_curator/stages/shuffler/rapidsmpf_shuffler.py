@@ -3,15 +3,12 @@
 This module implements a bulk-synchronous shuffle class using UCXX communication compatible with Ray Actors.
 """
 
-# ruff: noqa: ERA001
 from __future__ import annotations
 
-from collections.abc import Iterator
 from typing import TYPE_CHECKING, Literal
 
 import cudf
 import pylibcudf as plc
-import ray
 import rmm.mr
 from rapidsmpf.buffer.buffer import MemoryType
 from rapidsmpf.buffer.resource import BufferResource, LimitAvailableMemory
@@ -248,90 +245,3 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
         """
         for partition_id, partition in self.extract():
             self.write_table(partition, self.output_path, partition_id, column_names)
-
-
-@ray.remote(num_gpus=1)
-class BulkRapidsMPFShufflerActor(BulkRapidsMPFShuffler):
-    """
-    Actor compatible class that performs a bulk shuffle operation using Ray and UCXX communication.
-    """
-
-
-# def bulk_ray_shuffle(
-#     paths: list[str],
-#     output_path: str,
-#     shuffle_on: list[str],
-#     num_workers: int = 2,
-#     batchsize: int = 1,
-#     num_output_files: int | None = None,
-#     rmm_pool_size: int = 1024 * 1024 * 1024,
-#     spill_device: int | None = None,
-#     *,
-#     enable_statistics: bool = False,
-# ) -> None:
-#     """
-#     Perform a bulk shuffle operation using Ray and UCXX communication.
-
-#     Parameters
-#     ----------
-#     paths
-#         List of paths to input files.
-#     output_path
-#         Path to write output files.
-#     shuffle_on
-#         List of column names to shuffle on.
-#     num_workers
-#         Number of workers to use.
-#     batchsize
-#         Number of files to process in a batch.
-#     num_output_files
-#         Number of output files to write.
-#     rmm_pool_size
-#         Size of the RMM memory pool.
-#     spill_device
-#         Device memory limit for spilling to host.
-#     enable_statistics
-#         Whether to collect statistics.
-#     """
-#     # Initialize parameters
-#     num_input_files = len(paths)
-#     num_output_files = num_output_files or num_input_files
-#     total_num_partitions = num_output_files
-#     files_per_rank = math.ceil(num_input_files / num_workers)
-
-#     # Create output directory if it doesn't exist
-#     os.makedirs(output_path, exist_ok=True)
-
-#     # Initialize actors
-#     actors = setup_ray_ucxx_cluster(
-#         BulkRayShufflerActor,
-#         num_workers=num_workers,
-#         total_nparts=total_num_partitions,
-#         shuffle_on=shuffle_on,
-#         output_path=output_path,
-#         enable_statistics=enable_statistics,
-#         rmm_pool_size=rmm_pool_size,
-#         spill_device=spill_device,
-#     )
-
-#     start_time = time.time()
-
-#     insert_tasks = []
-#     for i, actor in enumerate(actors):
-#         # Calculate the start and end indices for this actor's files
-#         start = i * files_per_rank
-#         # Use min to ensure we don't go beyond the end of the paths list
-#         end = min(start + files_per_rank, num_input_files)
-#         insert_tasks.append(actor.read_and_insert.remote(paths[start:end], batchsize))
-
-#     column_names = ray.get(insert_tasks)
-
-#     ray.get(
-#         [actor.extract_and_write.remote(column_name) for actor, column_name in zip(actors, column_names, strict=False)]
-#     )
-
-#     end_time = time.time()
-#     print(f"Time taken: {end_time - start_time} seconds")
-
-#     # Cleanup actors
-#     ray.get([actor.cleanup.remote() for actor in actors])
