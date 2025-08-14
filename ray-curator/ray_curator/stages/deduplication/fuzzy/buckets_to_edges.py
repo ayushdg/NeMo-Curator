@@ -55,8 +55,8 @@ class BucketsToEdgesStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     def _check_io_kwargs(self, kwargs: dict[str, Any] | None) -> None:
         if kwargs is not None:
             unused_keys = set(kwargs.keys()) - {"storage_options"}
-        if len(unused_keys) > 0:
-            logger.warning(f"{unused_keys} will be ignored as this stage only supports 'storage_options'.")
+            if len(unused_keys) > 0:
+                logger.warning(f"{unused_keys} will be ignored as this stage only supports 'storage_options'.")
 
     def process(self, task: FileGroupTask) -> FileGroupTask:
         input_fs = get_fs(task.data[0], self.read_storage_options)
