@@ -77,7 +77,7 @@ class TestBucketsToEdgesStage:
         """Test basic edge creation from bucket data."""
         stage = BucketsToEdgesStage(
             output_dir=str(tmp_path / "output"),
-            doc_id_column=CURATOR_DEDUP_ID_STR,
+            doc_id_field=CURATOR_DEDUP_ID_STR,
         )
 
         # Process the task
@@ -151,7 +151,7 @@ class TestBucketsToEdgesStage:
 
         stage = BucketsToEdgesStage(
             output_dir=str(tmp_path / "output"),
-            doc_id_column="custom_doc_id",
+            doc_id_field="custom_doc_id",
         )
 
         output_task = stage.process(input_task)
@@ -194,7 +194,7 @@ class TestBucketsToEdgesStage:
 
         stage = BucketsToEdgesStage(
             output_dir=str(tmp_path / "output"),
-            doc_id_column=CURATOR_DEDUP_ID_STR,
+            doc_id_field=CURATOR_DEDUP_ID_STR,
         )
 
         output_task = stage.process(input_task)
@@ -230,7 +230,7 @@ class TestBucketsToEdgesStage:
 
         stage = BucketsToEdgesStage(
             output_dir=str(tmp_path / "output"),
-            doc_id_column=CURATOR_DEDUP_ID_STR,
+            doc_id_field=CURATOR_DEDUP_ID_STR,
         )
 
         output_task = stage.process(input_task)
@@ -263,7 +263,7 @@ class TestBucketsToEdgesStage:
 
         stage = BucketsToEdgesStage(
             output_dir=str(tmp_path / "output"),
-            doc_id_column=CURATOR_DEDUP_ID_STR,
+            doc_id_field=CURATOR_DEDUP_ID_STR,
         )
 
         output_task = stage.process(input_task)
@@ -292,7 +292,7 @@ class TestBucketsToEdgesStage:
 
         stage = BucketsToEdgesStage(
             output_dir=str(output_dir),
-            doc_id_column=CURATOR_DEDUP_ID_STR,
+            doc_id_field=CURATOR_DEDUP_ID_STR,
         )
 
         assert not existing_file.exists()
