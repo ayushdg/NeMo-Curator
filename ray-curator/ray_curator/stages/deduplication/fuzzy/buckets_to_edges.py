@@ -43,7 +43,7 @@ class BucketsToEdgesStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         self.read_storage_options = read_kwargs.get("storage_options", {}) if read_kwargs is not None else {}
         self.write_storage_options = write_kwargs.get("storage_options", {}) if write_kwargs is not None else {}
 
-        self.output_fs = get_fs(output_dir, write_kwargs.get("storage_options", {}))
+        self.output_fs = get_fs(output_dir, self.write_storage_options)
         self.output_dir = self.output_fs.sep.join([output_dir, self.name])
 
         # Handle output directory cleanup logic
