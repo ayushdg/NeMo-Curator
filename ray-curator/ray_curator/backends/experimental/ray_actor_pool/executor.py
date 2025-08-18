@@ -180,10 +180,17 @@ class RayActorPoolExecutor(BaseExecutor):
             List of processed Task objects
         """
         stage_batch_size: int = ray.get(actor_pool._idle_actors[0].get_batch_size.remote())
-        task_batches = []
-        for i in range(0, len(tasks), stage_batch_size):
-            batch = tasks[i : i + stage_batch_size]
-            task_batches.append(batch)
+        if _stage.ray_stage_spec().get(RayStageSpecKeys.IS_RAFT_ACTOR, False):
+            num_actors = len(actor_pool._idle_actors)
+            stage_batch_size = len(tasks) // num_actors
+            task_batches = [tasks[i : i + stage_batch_size] for i in range(0, len(tasks), stage_batch_size)]
+            if len(task_batches) > num_actors:
+                task_batches[-2].extend(task_batches.pop())
+        else:
+            task_batches = []
+            for i in range(0, len(tasks), stage_batch_size):
+                batch = tasks[i : i + stage_batch_size]
+                task_batches.append(batch)
 
         # Process each task and flatten the results since each task can produce multiple output tasks
         all_results = []
