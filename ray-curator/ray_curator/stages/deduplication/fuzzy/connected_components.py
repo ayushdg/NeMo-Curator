@@ -177,7 +177,7 @@ class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], De
         df = cudf.DataFrame()
         df[CURATOR_DEDUP_ID_STR] = vertices
         df["_duplicate_group_id"] = labels
-        df.to_parquet(output_file, index=False, **self.write_kwargs)
+        self.write_parquet(df=df, filepath=output_file, index=False, **self.write_kwargs)
         return [
             FileGroupTask(
                 dataset_name=tasks[0].dataset_name,
