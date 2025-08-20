@@ -50,10 +50,11 @@ class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], De
 
         self._name = self.__class__.__name__
         self._resources = Resources(cpus=1.0, gpus=1.0)
-        self.output_fs = get_fs(output_dir, self.write_kwargs.get("storage_options", {}))
-        self.output_dir = self.output_fs.sep.join([output_dir, self.name])
+        self._batch_size = None
 
         # Handle output directory cleanup logic
+        self.output_fs = get_fs(output_dir, self.write_kwargs.get("storage_options", {}))
+        self.output_dir = self.output_fs.sep.join([output_dir, self.name])
         if is_not_empty(self.output_dir, self.output_fs):
             logger.warning(f"Output directory {self.output_dir} is not empty. Deleting it.")
             delete_dir(self.output_dir, self.output_fs)
@@ -170,7 +171,10 @@ class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], De
             input_files.extend(task.data)
         output_file = self.output_fs.sep.join([self.output_dir, f"{tasks[0].task_id}.parquet"])
         edgelist_columns = [self.source_column, self.destination_column]
-        df = self.read_parquet(input_files, columns=edgelist_columns, **self.read_kwargs)
+        dfs = []
+        for input_file in input_files:
+            dfs.append(self.read_parquet(input_file, columns=edgelist_columns, **self.read_kwargs))
+        df = cudf.concat(dfs)
         # remove duplicate edges
         df = df.drop_duplicates(subset=edgelist_columns, ignore_index=True)
         vertices, labels = self.weakly_connected_components(df, self.source_column, self.destination_column)
