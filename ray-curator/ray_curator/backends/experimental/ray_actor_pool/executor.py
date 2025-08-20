@@ -270,14 +270,12 @@ class RayActorPoolExecutor(BaseExecutor):
     def _process_lsh_stage_with_rapidsmpf_actors(
         self,
         actors: list[ray.actor.ActorHandle],
-        _stage: "ProcessingStage",
         tasks: list[Task],
         band_range: tuple[int, int],
     ) -> list[Task]:
         """Process Shuffle through the actors.
         Args:
             actors: The actors to use for processing
-            _stage: The processing stage (for logging/context, unused)
             tasks: List of Task objects to process
             band_range: Band range for LSH shuffle
         Returns:
@@ -286,7 +284,7 @@ class RayActorPoolExecutor(BaseExecutor):
 
         actor_pool = ActorPool(actors)
         stage_batch_size: int = ray.get(actors[0].get_batch_size.remote())
-        task_batches = self._generate_task_batches(tasks, stage_batch_size)
+        task_batches = self._generate_task_batches(tasks, batch_size=stage_batch_size)
 
         # Step 1: Insert tasks into shuffler
         _ = list(
@@ -354,7 +352,7 @@ class RayActorPoolExecutor(BaseExecutor):
             logger.info(f"  Creating RapidsMPFShuffling Actor Pool for stage: {stage.name}")
             actors = self._create_rapidsmpf_actors(stage, num_actors, len(original_input))
 
-            outputs = self._process_lsh_stage_with_rapidsmpf_actors(actors, stage, original_input, band_range)
+            outputs = self._process_lsh_stage_with_rapidsmpf_actors(actors, original_input, band_range)
             all_lsh_outputs.extend(outputs)
 
             # Clean up actors

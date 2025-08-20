@@ -33,10 +33,10 @@ class LSHActor(BulkRapidsMPFShuffler):
         Number of LSH bands.
     minhashes_per_band
         Number of minhashes per band.
-    id_column
-        Name of the ID column in input data.
-    minhash_column
-        Name of the minhash column in input data.
+    id_field
+        Name of the ID field in input data.
+    minhash_field
+        Name of the minhash field in input data.
     output_path
         Path to write output files.
     rmm_pool_size
@@ -83,8 +83,8 @@ class LSHActor(BulkRapidsMPFShuffler):
         total_nparts: int,
         num_bands: int,
         minhashes_per_band: int,
-        id_column: str = CURATOR_DEDUP_ID_STR,
-        minhash_column: str = "_minhash_signature",
+        id_field: str = CURATOR_DEDUP_ID_STR,
+        minhash_field: str = "_minhash_signature",
         output_path: str = "./",
         rmm_pool_size: int = 1024 * 1024 * 1024,
         spill_memory_limit: int | Literal["auto"] | None = "auto",
@@ -104,8 +104,8 @@ class LSHActor(BulkRapidsMPFShuffler):
         )
         self.num_bands = num_bands
         self.minhashes_per_band = minhashes_per_band
-        self.id_column = id_column
-        self.minhash_column = minhash_column
+        self.id_field = id_field
+        self.minhash_field = minhash_field
         self.read_kwargs = read_kwargs if read_kwargs is not None else {}
         self.write_kwargs = write_kwargs if write_kwargs is not None else {}
 
@@ -135,7 +135,7 @@ class LSHActor(BulkRapidsMPFShuffler):
         if self.read_kwargs.get("columns", None) is not None:
             err_msg = "Columns cannot be set in read_kwargs for LSHActor"
             raise ValueError(err_msg)
-        return cudf.read_parquet(filepaths, columns=[self.id_column, self.minhash_column], **self.read_kwargs)
+        return cudf.read_parquet(filepaths, columns=[self.id_field, self.minhash_field], **self.read_kwargs)
 
     def minhash_to_bands(self, minhash_df: cudf.DataFrame, band_range: tuple[int, int]) -> cudf.DataFrame:
         """
@@ -160,22 +160,21 @@ class LSHActor(BulkRapidsMPFShuffler):
             band_range[0] : band_range[1]
         ]
 
-        # Create a dataframe with just the ID column
-        id_df = minhash_df[[self.id_column]]
+        id_df = minhash_df[[self.id_field]]
 
         for i, h in enumerate(band_ranges):
             indices = cudf.Series([h]).repeat(len(id_df))
-            id_df[f"_bucket_{i}"] = f"b{i}_" + minhash_df[self.minhash_column].list.take(indices).hash_values(
+            id_df[f"_bucket_{i}"] = f"b{i}_" + minhash_df[self.minhash_field].list.take(indices).hash_values(
                 method="md5"
             )
 
         value_vars = [f"_bucket_{i}" for i in range(len(band_ranges))]
-        melted_df = id_df.melt(id_vars=[self.id_column], value_name="_bucket_id", value_vars=value_vars)
+        melted_df = id_df.melt(id_vars=[self.id_field], value_name="_bucket_id", value_vars=value_vars)
 
         # Keep only the columns we need
-        return melted_df[[self.id_column, "_bucket_id"]]
+        return melted_df[[self.id_field, "_bucket_id"]]
 
-    def read_and_insert(self, filepaths: list[str], band_range: tuple[int, int]) -> list[str]:
+    def read_and_insert(self, filepaths: list[str], band_range: tuple[int, int]) -> None:
         """
         Read minhashes from files, create LSH bands, and insert into the shuffler.
 
@@ -193,14 +192,10 @@ class LSHActor(BulkRapidsMPFShuffler):
 
         Returns
         -------
-            Column names of the output table.
+        None
         """
-        # Get consistent column names for all batches
-        column_names = [self.id_column, "_bucket_id"]
-
         if not filepaths:
-            # Return column names even if no paths were provided
-            return column_names
+            return
 
         if band_range[0] < 0 or band_range[1] > self.num_bands or band_range[0] >= band_range[1]:
             msg = f"Invalid band range: {band_range}, must be in range [0, {self.num_bands}]"
@@ -211,7 +206,7 @@ class LSHActor(BulkRapidsMPFShuffler):
         # Skip processing if the batch is empty
         if minhash_df is None or len(minhash_df) == 0:
             logger.info("Skipping empty batch")
-            return column_names
+            return
 
         # Process this batch of minhashes to get band data
         band_df = self.minhash_to_bands(minhash_df, band_range)
@@ -220,8 +215,6 @@ class LSHActor(BulkRapidsMPFShuffler):
         self.insert_chunk(band_df, list(band_df.columns))
         # Clear memory after processing a batch
         del minhash_df, band_df
-
-        return column_names
 
     def group_by_bucket(self, df: cudf.DataFrame, include_singles: bool = False) -> cudf.DataFrame:
         """
@@ -241,11 +234,12 @@ class LSHActor(BulkRapidsMPFShuffler):
             DataFrame with bucket IDs and lists of document IDs.
         """
         if not include_singles:
+            # TODO: Add support for generating LSH index with single-document buckets that can be reused in incremental runs
             # Find bucket_ids that appear more than once (have multiple documents)
             # Keep only rows with buckets that are duplicated
             df = df[df["_bucket_id"].duplicated(keep=False)]
         # Group by bucket_id and aggregate document IDs
-        return df.groupby("_bucket_id")[self.id_column].agg(list).list.sort_values().reset_index()
+        return df.groupby("_bucket_id")[self.id_field].agg(list).list.sort_values().reset_index()
 
     def extract_and_group(self) -> Iterator[tuple[int, cudf.DataFrame]]:
         """
@@ -261,7 +255,7 @@ class LSHActor(BulkRapidsMPFShuffler):
             and their corresponding document ID lists.
         """
         # Fixed column names for pylibcudf conversion
-        column_names = [self.id_column, "_bucket_id"]
+        column_names = [self.id_field, "_bucket_id"]
         for partition_id, partition in self.extract():
             # Convert to cuDF DataFrame
             df = pylibcudf_to_cudf_dataframe(partition, column_names=column_names)

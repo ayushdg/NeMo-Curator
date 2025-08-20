@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 
 import pytest
-import ray
 
 cudf = pytest.importorskip("cudf", reason="MinHashStage tests require cudf")
 
@@ -15,16 +14,8 @@ from ray_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR
 from ray_curator.tasks import FileGroupTask
 
 
-@pytest.fixture(scope="module")
-def ray_fixture():
-    """Initialize and shutdown Ray for tests."""
-    ray.init(ignore_reinit_error=True)
-    yield
-    ray.shutdown()
-
-
 @pytest.mark.gpu
-@pytest.mark.usefixtures("ray_fixture")
+@pytest.mark.usefixtures("shared_ray_client")
 class TestLSHStage:
     @pytest.fixture(autouse=True)
     def minhash_data(self, tmp_path: Path) -> FileGroupTask:
@@ -71,8 +62,8 @@ class TestLSHStage:
             num_bands=3,
             minhashes_per_band=2,  # num_hashes=6 / num_buckets=3
             bands_per_iteration=bands_per_iteration,
-            minhash_column="_minhash_signature",
-            id_column=CURATOR_DEDUP_ID_STR,
+            minhash_field="_minhash_signature",
+            id_field=CURATOR_DEDUP_ID_STR,
         )
 
         # Create pipeline and executor
@@ -133,8 +124,8 @@ class TestLSHStage:
             num_bands=3,
             minhashes_per_band=2,
             bands_per_iteration=3,
-            minhash_column="_minhash_signature",
-            id_column=CURATOR_DEDUP_ID_STR,
+            minhash_field="_minhash_signature",
+            id_field=CURATOR_DEDUP_ID_STR,
         )
 
         # Verify that the original files no longer exist (directory was cleaned)
@@ -190,8 +181,8 @@ class TestLSHStage:
             num_bands=3,
             minhashes_per_band=2,
             bands_per_iteration=3,
-            id_column="document_id",  # Custom ID column
-            minhash_column="signature",  # Custom minhash column
+            id_field="document_id",  # Custom ID column
+            minhash_field="signature",  # Custom minhash column
         )
 
         # Create pipeline and executor
@@ -259,8 +250,8 @@ class TestLSHStage:
             num_bands=5,
             minhashes_per_band=1,  # num_hashes=5 / num_buckets=5
             bands_per_iteration=1,
-            id_column=CURATOR_DEDUP_ID_STR,
-            minhash_column="_minhash_signature",
+            id_field=CURATOR_DEDUP_ID_STR,
+            minhash_field="_minhash_signature",
         )
 
         # Create pipeline and executor
@@ -318,8 +309,8 @@ class TestLSHStage:
             num_bands=5,
             minhashes_per_band=1,
             bands_per_iteration=1,
-            id_column=CURATOR_DEDUP_ID_STR,
-            minhash_column="_minhash_signature",
+            id_field=CURATOR_DEDUP_ID_STR,
+            minhash_field="_minhash_signature",
         )
 
         # Create pipeline and executor
@@ -359,8 +350,8 @@ class TestLSHStage:
             num_bands=3,
             minhashes_per_band=2,
             bands_per_iteration=1,
-            id_column=CURATOR_DEDUP_ID_STR,
-            minhash_column="_minhash_signature",
+            id_field=CURATOR_DEDUP_ID_STR,
+            minhash_field="_minhash_signature",
         )
 
         # Try to call methods without actor object initialized

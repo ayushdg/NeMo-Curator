@@ -26,10 +26,10 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         Number of LSH bands.
     minhashes_per_band
         Number of minhashes per band.
-    id_column
-        Name of the ID column in input data.
-    minhash_column
-        Name of the minhash column in input data.
+    id_field
+        Name of the ID field in input data.
+    minhash_field
+        Name of the minhash field in input data.
     output_dir
         Directory to write output files.
     read_kwargs
@@ -59,8 +59,8 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     num_bands: int
     minhashes_per_band: int
     # Data parameters
-    id_column: str = CURATOR_DEDUP_ID_STR
-    minhash_column: str = "_minhash_signature"
+    id_field: str = CURATOR_DEDUP_ID_STR
+    minhash_field: str = "_minhash_signature"
     output_dir: str = "./"
     read_kwargs: dict[str, Any] | None = None
     write_kwargs: dict[str, Any] | None = None
@@ -80,8 +80,8 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         self.actor_kwargs = {
             "num_bands": self.num_bands,
             "minhashes_per_band": self.minhashes_per_band,
-            "id_column": self.id_column,
-            "minhash_column": self.minhash_column,
+            "id_field": self.id_field,
+            "minhash_field": self.minhash_field,
             "rmm_pool_size": self.rmm_pool_size,
             "spill_memory_limit": self.spill_memory_limit,
             "enable_statistics": self.enable_statistics,
