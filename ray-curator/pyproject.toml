@@ -24,7 +24,6 @@ dependencies = [
     "absl-py>=2.0.0,<3.0.0",
     "comment_parser",
     "cosmos-xenna @ git+https://github.com/nvidia-cosmos/cosmos-xenna.git@main",
-    "crossfit>=0.0.9",
     "fsspec",
     "jieba==0.42.1",
     "loguru",
@@ -73,10 +72,13 @@ dev = [
     "pytest-coverage",
     "pytest-loguru",
     "ruff==0.11.4",
+    "scikit-learn",
 ]
 video = [
     "av==13.1.0",
     "opencv-python",
+    "torchvision",
+    "einops",
 ]
 video_cuda = [
     "PyNvVideoCodec==1.0.2",
