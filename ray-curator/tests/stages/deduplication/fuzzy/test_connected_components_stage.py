@@ -147,7 +147,6 @@ class TestConnectedComponentsStage:
         found_docs = {tuple(sorted(group)) for group in grouped_df.tolist()}
         assert found_docs == {(10, 11, 12, 13, 120), (14, 15, 16, 17, 18, 19, 110, 111)}
 
-    @pytest.mark.usefixtures("shared_ray_client")
     def test_output_directory_cleanup(self, tmp_path: "Path") -> None:
         """Test that output directory is cleaned up if it exists."""
         output_dir = tmp_path / "cc_output_cleanup"
