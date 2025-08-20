@@ -12,24 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from abc import ABC, abstractmethod
 
-from nemo_curator.modifiers import DocumentModifier
 
-
-class LineRemover(DocumentModifier):
+class DocumentModifier(ABC):
     """
-    Removes lines from a document if the content of the line matches a given string.
+    Abstract base class for text-based document modifiers.
+
+    Subclasses must implement `modify_document` to transform input text and
+    return the modified text. The `backend` property can be overridden to
+    signal a specific dataframe backend requirement.
     """
 
-    def __init__(self, patterns: list[str]):
-        """
-        Args:
-            patterns (List[str]): The patterns to check
-        """
+    def __init__(self) -> None:
         super().__init__()
-        self._patterns = patterns
+        self._name = self.__class__.__name__
+        self._sentences = None
+        self._paragraphs = None
+        self._ngrams = None
 
+    @abstractmethod
     def modify_document(self, text: str) -> str:
-        lines = text.split("\n")
-        new_lines = [line for line in lines if line not in self._patterns]
-        return "\n".join(new_lines)
+        """Transform the provided document text and return the result."""
+        raise NotImplementedError
+
+    @property
+    def name(self) -> str:
+        return self._name

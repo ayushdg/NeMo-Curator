@@ -51,6 +51,8 @@ text = [
     "mwparserfromhell==0.6.5",
     # Aegis
     "peft",
+    # Modifiers
+    "ftfy==6.1.1",
 ]
 
 # Installs CPU + GPU text curation modules

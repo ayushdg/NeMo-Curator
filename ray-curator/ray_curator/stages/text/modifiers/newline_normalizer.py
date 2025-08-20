@@ -13,7 +13,7 @@
 # limitations under the License.
 import re
 
-from nemo_curator.modifiers import DocumentModifier
+from ray_curator.stages.text.modifiers.doc_modifier import DocumentModifier
 
 THREE_OR_MORE_NEWLINES_REGEX = re.compile(r"(\n){3,}")
 THREE_OR_MORE_WINDOWS_NEWLINES_REGEX = re.compile(r"(\r\n){3,}")

@@ -13,7 +13,7 @@
 # limitations under the License.
 import re
 
-from nemo_curator.modifiers import DocumentModifier
+from ray_curator.stages.text.modifiers.doc_modifier import DocumentModifier
 
 URL_REGEX = re.compile(r"https?://\S+|www\.\S+", flags=re.IGNORECASE)
 

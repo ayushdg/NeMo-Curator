@@ -1,6 +1,7 @@
 import uuid
 from typing import TYPE_CHECKING
 
+import numpy as np
 import ray
 from loguru import logger
 from ray.util.actor_pool import ActorPool
@@ -92,10 +93,8 @@ class RayActorPoolExecutor(BaseExecutor):
                         actor_pool = self._create_raft_actor_pool(stage, num_actors, session_id)
                     else:
                         actor_pool = self._create_actor_pool(stage, num_actors)
-
-                    # Process tasks through this stage using ActorPool
+                    logger.info(f"Created actor pool for {stage.name} with {num_actors} actors")
                     current_tasks = self._process_stage_with_pool(actor_pool, stage, current_tasks)
-
                     # Clean up actor pool
                     self._cleanup_actor_pool(actor_pool)
 
@@ -144,7 +143,7 @@ class RayActorPoolExecutor(BaseExecutor):
                 .options(
                     num_cpus=stage.resources.cpus,
                     num_gpus=stage.resources.gpus,
-                    name=f"{stage.name}-{actor_idx}",
+                    name=f"{stage.name}Actor-{actor_idx}",
                 )
                 .remote(
                     stage=stage,
@@ -200,19 +199,28 @@ class RayActorPoolExecutor(BaseExecutor):
 
         return actors
 
-    def _generate_task_batches(self, tasks: list[Task], batch_size: int) -> list[list[Task]]:
+    def _generate_task_batches(
+        self, tasks: list[Task], batch_size: int | None = None, num_output_tasks: int | None = None
+    ) -> list[list[Task]]:
         """Generate task batches from a list of tasks.
         Args:
             tasks: List of Task objects to process
             batch_size: The size of the batch
+            num_output_tasks: The number of output tasks to generate.
+            Either batch_size or num_output_tasks must be provided but not both.
         Returns:
             List of task batches
         """
-        task_batches = []
-        for i in range(0, len(tasks), batch_size):
-            batch = tasks[i : i + batch_size]
-            task_batches.append(batch)
-        return task_batches
+        if batch_size is None and num_output_tasks is None:
+            err_msg = "Either batch_size or num_output_tasks must be provided"
+            raise ValueError(err_msg)
+        elif batch_size is not None and num_output_tasks is not None:
+            err_msg = "Either batch_size or num_output_tasks must be provided but not both"
+            raise ValueError(err_msg)
+        elif num_output_tasks is not None:
+            return [batch.tolist() for batch in np.array_split(tasks, num_output_tasks) if len(batch) > 0]
+        else:
+            return [tasks[i : i + batch_size] for i in range(0, len(tasks), batch_size)]
 
     def _process_stage_with_pool(
         self, actor_pool: ActorPool, _stage: "ProcessingStage", tasks: list[Task]
@@ -228,7 +236,26 @@ class RayActorPoolExecutor(BaseExecutor):
             List of processed Task objects
         """
         stage_batch_size: int = ray.get(actor_pool._idle_actors[0].get_batch_size.remote())
-        task_batches = self._generate_task_batches(tasks, stage_batch_size)
+        if _stage.ray_stage_spec().get(RayStageSpecKeys.IS_RAFT_ACTOR, False):
+            # For a RAFT stage we want to ensure all actors are utilized by distributing tasks evenly
+            if stage_batch_size is not None:
+                logger.warning(
+                    f"Stage {_stage.name} is a RAFT stage but has a batch size of {stage_batch_size}. Ignoring batch size."
+                )
+            num_actors = len(actor_pool._idle_actors)
+            task_batches = self._generate_task_batches(tasks, num_output_tasks=num_actors)
+        else:
+            # For non-RAFT stages, we batch it based on the stage batch size
+            task_batches = self._generate_task_batches(tasks, stage_batch_size)
+
+        if _stage.ray_stage_spec().get(RayStageSpecKeys.IS_RAFT_ACTOR, False):
+            logger.info(
+                f"Distributed {len(tasks)} tasks evenly across {len(task_batches)} actors for RAFT stage {_stage.name}"
+            )
+        else:
+            logger.info(
+                f"Broke down {len(tasks)} tasks into batches of {stage_batch_size} for a total of {len(task_batches)} batches for {_stage.name}"
+            )
 
         # Process each task and flatten the results since each task can produce multiple output tasks
         all_results = []
@@ -237,6 +264,7 @@ class RayActorPoolExecutor(BaseExecutor):
         ):
             # result_batch is a list of tasks from processing a single input task
             all_results.extend(result_batch)
+
         return all_results
 
     def _process_lsh_stage_with_rapidsmpf_actors(
