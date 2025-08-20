@@ -94,7 +94,7 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
             rmm.mr.PoolMemoryResource(
                 rmm.mr.CudaMemoryResource(),
                 initial_pool_size=self.rmm_pool_size,
-                maximum_pool_size=self.rmm_pool_size,
+                maximum_pool_size=None,
             )
         )
         rmm.mr.set_current_device_resource(mr)
