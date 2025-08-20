@@ -88,7 +88,8 @@ class ShuffleStageAdapter(BaseStageAdapter):
 
     def setup(self) -> None:
         """Note: This method is unused"""
-        super().setup(worker_metadata=self.worker_metadata)
+        err_msg = "ShuffleStageAdapter.setup is not used in the current implementation"
+        raise NotImplementedError(err_msg)
 
     def setup_root(self) -> None:
         """Setup the root actor."""
@@ -100,8 +101,9 @@ class ShuffleStageAdapter(BaseStageAdapter):
         if self.root_address is None:
             self.root_address = root_address
         elif self.root_address != root_address:
-            logger.warning(f"Root address mismatch during worker setup: {self.root_address} != {root_address}")
-        self.stage._actor_obj.setup_worker(root_address)
+            err_msg = f"Root address mismatch during worker setup: {self.root_address} != {root_address}"
+            raise RuntimeError(err_msg)
+        self.stage._actor_obj.setup_worker(self.root_address)
 
     def read_and_insert(self, tasks: list[FileGroupTask], band_range: tuple[int, int]) -> list[FileGroupTask]:
         """Read and insert tasks into the shuffler."""

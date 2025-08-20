@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, Literal
 
 import cudf
+from loguru import logger
 from rapidsmpf.utils.cudf import pylibcudf_to_cudf_dataframe
 
 from ray_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR
@@ -202,14 +203,14 @@ class LSHActor(BulkRapidsMPFShuffler):
             return column_names
 
         if band_range[0] < 0 or band_range[1] > self.num_bands or band_range[0] >= band_range[1]:
-            msg = f"Invalid band range: {band_range}, must be in range [0, {self.num_bands})"
+            msg = f"Invalid band range: {band_range}, must be in range [0, {self.num_bands}]"
             raise ValueError(msg)
 
         # Process files in batches
         minhash_df = self.read_minhash(filepaths)
         # Skip processing if the batch is empty
         if minhash_df is None or len(minhash_df) == 0:
-            print("Skipping empty batch")
+            logger.info("Skipping empty batch")
             return column_names
 
         # Process this batch of minhashes to get band data
