@@ -246,7 +246,7 @@ class RayActorPoolExecutor(BaseExecutor):
             task_batches = self._generate_task_batches(tasks, num_output_tasks=num_actors)
         else:
             # For non-RAFT stages, we batch it based on the stage batch size
-            task_batches = self._generate_task_batches(tasks, stage_batch_size)
+            task_batches = self._generate_task_batches(tasks, batch_size=stage_batch_size)
 
         if _stage.ray_stage_spec().get(RayStageSpecKeys.IS_RAFT_ACTOR, False):
             logger.info(
