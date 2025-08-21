@@ -16,7 +16,6 @@ import math
 from typing import TYPE_CHECKING, Any
 
 import cudf
-import cugraph
 from cugraph.dask.comms.comms_wrapper import init_subcomms as c_init_subcomms
 from loguru import logger
 from pylibcugraph import GraphProperties, MGGraph, ResourceHandle
@@ -30,7 +29,7 @@ from ray_curator.stages.deduplication.id_generator import (
 from ray_curator.stages.deduplication.io_utils import DeduplicationIO
 from ray_curator.stages.resources import Resources
 from ray_curator.tasks.file_group import FileGroupTask
-from ray_curator.utils.file_utils import delete_dir, get_fs, is_not_empty
+from ray_curator.utils.file_utils import create_or_overwrite_dir, get_fs
 
 if TYPE_CHECKING:
     from ray_curator.backends.base import WorkerMetadata
@@ -69,10 +68,7 @@ class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], De
         # Handle output directory cleanup logic
         self.output_fs = get_fs(output_dir, self.write_kwargs.get("storage_options", {}))
         self.output_dir = self.output_fs.sep.join([output_dir, self.name])
-        if is_not_empty(self.output_dir, self.output_fs):
-            logger.warning(f"Output directory {self.output_dir} is not empty. Deleting it.")
-            delete_dir(self.output_dir, self.output_fs)
-        self.output_fs.mkdirs(self.output_dir, exist_ok=True)
+        create_or_overwrite_dir(self.output_dir, self.output_fs)
 
     def setup(self, _worker_metadata: "WorkerMetadata | None" = None) -> None:
         if not hasattr(self, "_raft_handle"):
@@ -124,16 +120,14 @@ class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], De
             The stop index of the chunk.
         """
 
-        dg = cugraph.Graph(directed=False)
-
         src_array = df[src_col]
         dst_array = df[dst_col]
 
         rhandle = ResourceHandle(self._raft_handle.getHandle())
 
         graph_props = GraphProperties(
-            is_multigraph=False,  # dg.properties.multi_edge (what is multi_edge)
-            is_symmetric=not dg.graph_properties.directed,
+            is_multigraph=False,
+            is_symmetric=True,
         )
         logger.debug("Running graph creation")
         plc_graph = MGGraph(
@@ -192,9 +186,12 @@ class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], De
         # remove duplicate edges
         df = df.drop_duplicates(subset=edgelist_columns, ignore_index=True)
         vertices, labels = self.weakly_connected_components(df, self.source_column, self.destination_column)
-        df = cudf.DataFrame()
-        df[CURATOR_DEDUP_ID_STR] = vertices
-        df["_duplicate_group_id"] = labels
+        df = cudf.DataFrame(
+            {
+                CURATOR_DEDUP_ID_STR: vertices,
+                "_duplicate_group_id": labels,
+            }
+        )
         self.write_parquet(df=df, filepath=output_file, index=False, **self.write_kwargs)
         return [
             FileGroupTask(
