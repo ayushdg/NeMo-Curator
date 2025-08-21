@@ -52,9 +52,6 @@ class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], De
             read_kwargs: Keyword arguments to pass for reading the input files.
             write_kwargs: Keyword arguments to pass for writing the output files.
         """
-        # Initialize parent classes
-        ProcessingStage.__init__(self)
-        DeduplicationIO.__init__(self, id_generator=None)
 
         self.source_column = source_column
         self.destination_column = destination_column
