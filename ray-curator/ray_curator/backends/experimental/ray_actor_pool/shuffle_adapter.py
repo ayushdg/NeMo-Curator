@@ -62,7 +62,7 @@ class ShuffleStageAdapter(BaseStageAdapter):
             if self.stage.ray_stage_spec().get(RayStageSpecKeys.IS_LSH_STAGE, False):
                 self.output_nparts = max(1, 2 ** math.floor(math.log2(num_input_tasks)))
             else:
-                self.output_nparts = num_input_tasks
+                self.output_nparts = max(1, num_input_tasks)
         else:
             self.output_nparts = stage_class_kwargs.get("total_nparts")
 
