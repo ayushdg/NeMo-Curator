@@ -13,6 +13,7 @@ from ray_curator.tasks import FileGroupTask
 
 if TYPE_CHECKING:
     from ray_curator.stages.deduplication.fuzzy.lsh.stage import LSHStage
+    from ray_curator.stages.shuffler.stage import ShuffleStage
 
 
 @ray.remote
@@ -25,7 +26,7 @@ class ShuffleStageAdapter(BaseStageAdapter):
 
     def __init__(
         self,
-        stage: "LSHStage",
+        stage: "ShuffleStage | LSHStage",
         rank: int,
         nranks: int,
         num_input_tasks: int | None = None,
@@ -105,11 +106,14 @@ class ShuffleStageAdapter(BaseStageAdapter):
             raise RuntimeError(err_msg)
         self.stage._actor_obj.setup_worker(self.root_address)
 
-    def read_and_insert(self, tasks: list[FileGroupTask], band_range: tuple[int, int]) -> list[FileGroupTask]:
+    def read_and_insert(
+        self, tasks: list[FileGroupTask], band_range: tuple[int, int] | None = None
+    ) -> list[FileGroupTask]:
         """Read and insert tasks into the shuffler."""
+        insert_kwargs = {"bands_range": band_range} if band_range is not None else {}
         results = []
         for task in tasks:
-            results.append(self.stage.read_and_insert(task, band_range))
+            results.append(self.stage.read_and_insert(task, **insert_kwargs))
         return results
 
     def insert_finished(self) -> None:
