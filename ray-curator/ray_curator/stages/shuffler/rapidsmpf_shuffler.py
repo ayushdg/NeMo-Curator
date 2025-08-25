@@ -155,7 +155,7 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
         output_path: str,
         partition_id: int | str,
         column_names: list[str],
-    ) -> None:
+    ) -> str:
         """
         Write a pylibcudf Table to a Parquet file using cuDF.
 
@@ -177,6 +177,7 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
             table,
             column_names=column_names,
         ).to_parquet(path, **write_kwargs)
+        return path
 
     def insert_chunk(self, table: plc.Table | cudf.DataFrame, column_names: list[str]) -> None:
         """
@@ -226,7 +227,6 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
             if not column_names:
                 column_names = batch_column_names
             self.insert_chunk(df, column_names)
-        self.insert_finished()
         return column_names
 
     def insert_finished(self) -> None:
@@ -255,7 +255,7 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
             )
             yield partition_id, partition
 
-    def extract_and_write(self, column_names: list[str]) -> None:
+    def extract_and_write(self, column_names: list[str]) -> list[tuple[int, str]]:
         """
         Extract and write shuffled partitions.
 
@@ -264,5 +264,8 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
         column_names
             The column names of the table.
         """
+        partition_paths = []
         for partition_id, partition in self.extract():
-            self.write_table(partition, self.output_path, partition_id, column_names)
+            path = self.write_table(partition, self.output_path, partition_id, column_names)
+            partition_paths.append((partition_id, path))
+        return partition_paths
