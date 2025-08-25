@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationIO):
     def __init__(
         self,
-        output_dir: str,
+        output_path: str,
         source_field: str = f"{CURATOR_DEDUP_ID_STR}_x",
         destination_field: str = f"{CURATOR_DEDUP_ID_STR}_y",
         read_kwargs: dict | None = None,
@@ -47,7 +47,7 @@ class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], De
     ):
         """
         Args:
-            output_dir: The directory to write the resulting connected components to.
+            output_path: The path to write the resulting connected components to.
             source_field: The field name containing the document ids of the source of the edge.
             destination_field: The field name containing the document ids of the destination of the edge.
             read_kwargs: Keyword arguments to pass for reading the input files.
@@ -64,9 +64,9 @@ class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], De
         self._batch_size = None
 
         # Handle output directory cleanup logic
-        self.output_fs = get_fs(output_dir, self.write_kwargs.get("storage_options"))
-        self.output_dir = self.output_fs.sep.join([output_dir, self.name])
-        create_or_overwrite_dir(self.output_dir, self.output_fs)
+        self.output_fs = get_fs(output_path, self.write_kwargs.get("storage_options"))
+        self.output_path = self.output_fs.sep.join([output_path, self.name])
+        create_or_overwrite_dir(self.output_path, fs=self.output_fs)
 
     def setup(self, _worker_metadata: "WorkerMetadata | None" = None) -> None:
         if not hasattr(self, "_raft_handle"):
@@ -175,7 +175,7 @@ class ConnectedComponentsStage(ProcessingStage[FileGroupTask, FileGroupTask], De
         input_files = []
         for task in tasks:
             input_files.extend(task.data)
-        output_file = self.output_fs.sep.join([self.output_dir, f"{tasks[0].task_id}.parquet"])
+        output_file = self.output_fs.sep.join([self.output_path, f"{tasks[0].task_id}.parquet"])
         edgelist_columns = [self.source_field, self.destination_field]
         dfs = []
         for input_file in input_files:

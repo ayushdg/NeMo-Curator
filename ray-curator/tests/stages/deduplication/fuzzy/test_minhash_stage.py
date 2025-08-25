@@ -124,7 +124,7 @@ class TestMinHashStage:
 
         # Create stage
         stage = MinHashStage(
-            output_dir=str(tmp_path / f"output_{read_format}_{use_64bit_hash}_{num_hashes}"),
+            output_path=str(tmp_path / f"output_{read_format}_{use_64bit_hash}_{num_hashes}"),
             text_field=text_field,
             minhash_field="_minhash_signature",
             char_ngrams=char_ngrams,
@@ -201,7 +201,7 @@ class TestMinHashStage:
         )
 
         stage = MinHashStage(
-            output_dir=str(tmp_path / "output"),
+            output_path=str(tmp_path / "output"),
             text_field="text",  # This column doesn't exist
             pool=False,
         )
@@ -226,7 +226,7 @@ class TestMinHashStage:
         )
 
         stage = MinHashStage(
-            output_dir=str(tmp_path / "output"),
+            output_path=str(tmp_path / "output"),
             text_field="text",
             pool=False,
         )
@@ -238,7 +238,7 @@ class TestMinHashStage:
     def test_process_without_setup(self, tmp_path: Path) -> None:
         """Test that process raises error if setup wasn't called."""
         stage = MinHashStage(
-            output_dir=str(tmp_path),
+            output_path=str(tmp_path),
             text_field="text",
         )
 
@@ -273,7 +273,7 @@ class TestMinHashStage:
         )
 
         stage = MinHashStage(
-            output_dir=str(tmp_path / "output"),
+            output_path=str(tmp_path / "output"),
             text_field="text",
             num_hashes=128,
             char_ngrams=5,
@@ -315,7 +315,7 @@ class TestMinHashStage:
         )
 
         stage = MinHashStage(
-            output_dir=str(tmp_path / "output"),
+            output_path=str(tmp_path / "output"),
             text_field="text",
             num_hashes=64,
             char_ngrams=3,
@@ -347,7 +347,7 @@ class TestMinHashStage:
         """Test that calling setup multiple times doesn't cause issues and IDs continue from where they left off."""
         # Create first stage
         stage1 = MinHashStage(
-            output_dir=str(tmp_path / "output1"),
+            output_path=str(tmp_path / "output1"),
             text_field="text",
             pool=False,
         )
@@ -376,7 +376,7 @@ class TestMinHashStage:
 
         # Create second stage (different instance)
         stage2 = MinHashStage(
-            output_dir=str(tmp_path / "output2"),
+            output_path=str(tmp_path / "output2"),
             text_field="text",
             pool=False,
         )

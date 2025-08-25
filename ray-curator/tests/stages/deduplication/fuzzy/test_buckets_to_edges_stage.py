@@ -93,7 +93,7 @@ class TestBucketsToEdgesStage:
     def test_basic_edge_creation(self, input_task: FileGroupTask, tmp_path: Path) -> None:
         """Test basic edge creation from bucket data."""
         stage = BucketsToEdgesStage(
-            output_dir=str(tmp_path / "output"),
+            output_path=str(tmp_path / "output"),
             doc_id_field=CURATOR_DEDUP_ID_STR,
         )
 
@@ -167,7 +167,7 @@ class TestBucketsToEdgesStage:
         )
 
         stage = BucketsToEdgesStage(
-            output_dir=str(tmp_path / "output"),
+            output_path=str(tmp_path / "output"),
             doc_id_field="custom_doc_id",
         )
 
@@ -210,7 +210,7 @@ class TestBucketsToEdgesStage:
         )
 
         stage = BucketsToEdgesStage(
-            output_dir=str(tmp_path / "output"),
+            output_path=str(tmp_path / "output"),
             doc_id_field=CURATOR_DEDUP_ID_STR,
         )
 
@@ -246,7 +246,7 @@ class TestBucketsToEdgesStage:
         )
 
         stage = BucketsToEdgesStage(
-            output_dir=str(tmp_path / "output"),
+            output_path=str(tmp_path / "output"),
             doc_id_field=CURATOR_DEDUP_ID_STR,
         )
 
@@ -279,7 +279,7 @@ class TestBucketsToEdgesStage:
         )
 
         stage = BucketsToEdgesStage(
-            output_dir=str(tmp_path / "output"),
+            output_path=str(tmp_path / "output"),
             doc_id_field=CURATOR_DEDUP_ID_STR,
         )
 
@@ -308,7 +308,7 @@ class TestBucketsToEdgesStage:
         assert existing_file.exists()
 
         stage = BucketsToEdgesStage(
-            output_dir=str(output_dir),
+            output_path=str(output_dir),
             doc_id_field=CURATOR_DEDUP_ID_STR,
         )
 

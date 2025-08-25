@@ -2,8 +2,6 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from loguru import logger
-
 from ray_curator.backends.experimental.utils import RayStageSpecKeys
 from ray_curator.stages.base import ProcessingStage
 from ray_curator.stages.deduplication.fuzzy.lsh.lsh import LSHActor
@@ -11,7 +9,7 @@ from ray_curator.stages.deduplication.fuzzy.utils import CURATOR_DEFAULT_MINHASH
 from ray_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR
 from ray_curator.stages.resources import Resources
 from ray_curator.tasks import FileGroupTask
-from ray_curator.utils.file_utils import delete_dir, get_fs, is_not_empty
+from ray_curator.utils.file_utils import create_or_overwrite_dir, get_fs
 
 
 @dataclass
@@ -31,8 +29,8 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         Name of the ID field in input data.
     minhash_field
         Name of the minhash field in input data.
-    output_dir
-        Directory to write output files.
+    output_path
+        Base path to write output files.
     read_kwargs
         Keyword arguments for the read method.
     write_kwargs
@@ -62,7 +60,7 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     # Data parameters
     id_field: str = CURATOR_DEDUP_ID_STR
     minhash_field: str = CURATOR_DEFAULT_MINHASH_FIELD
-    output_dir: str = "./"
+    output_path: str = "./"
     read_kwargs: dict[str, Any] | None = None
     write_kwargs: dict[str, Any] | None = None
     # Shuffle parameters
@@ -97,17 +95,15 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
             raise ValueError(err_msg)
 
         # Handle output directory and subdirectories
-        output_fs = get_fs(self.output_dir, storage_options=self.write_kwargs.get("storage_options"))
-        output_base_dir = output_fs.sep.join([self.output_dir, self.name])
+        output_fs = get_fs(self.output_path, storage_options=self.write_kwargs.get("storage_options"))
+        output_base_path = output_fs.sep.join([self.output_path, self.name])
 
-        if is_not_empty(output_base_dir, output_fs):
-            logger.warning(f"Output directory {output_base_dir} is not empty. Deleting it.")
-            delete_dir(output_base_dir, output_fs)
+        create_or_overwrite_dir(output_base_path, fs=output_fs)
 
         for band_range in self.get_band_iterations():
-            output_dir = output_fs.sep.join([output_base_dir, f"band_{band_range[0]}-band_{band_range[1]}"])
-            output_fs.makedirs(output_dir)
-            self.output_paths.append(output_dir)
+            output_path = output_fs.sep.join([output_base_path, f"band_{band_range[0]}-band_{band_range[1]}"])
+            create_or_overwrite_dir(output_path, fs=output_fs)
+            self.output_paths.append(output_path)
 
     def process(self, task: FileGroupTask) -> FileGroupTask:
         err_msg = "LSHProcessingStage does not support the process method."

@@ -179,8 +179,8 @@ class MinHashStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationI
 
     Parameters
     ----------
-    output_dir : str
-        Directory where minhash output files will be written
+    output_path : str
+        Base path where minhash output files will be written
     text_field : str, default="text"
         Name of the field containing text to compute minhashes from
     minhash_field : str, default="_minhash_signature"
@@ -203,7 +203,7 @@ class MinHashStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationI
     Examples
     --------
     >>> stage = MinHashStage(
-    ...     output_dir="/path/to/minhash/output",
+    ...     output_path="/path/to/minhash/output",
     ...     text_field="content",
     ...     num_hashes=128,
     ...     char_ngrams=5
@@ -213,7 +213,7 @@ class MinHashStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationI
 
     def __init__(  # noqa: PLR0913
         self,
-        output_dir: str,
+        output_path: str,
         text_field: str = "text",
         minhash_field: str = CURATOR_DEFAULT_MINHASH_FIELD,
         char_ngrams: int = 24,
@@ -243,9 +243,9 @@ class MinHashStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationI
         self.minhash_processor = None
         self.id_generator = None
 
-        self.output_fs = get_fs(output_dir, self.write_kwargs.get("storage_options", {}))
-        self.output_dir = self.output_fs.sep.join([output_dir, self._name])
-        create_or_overwrite_dir(self.output_dir, storage_options=self.write_kwargs.get("storage_options", {}))
+        self.output_fs = get_fs(output_path, self.write_kwargs.get("storage_options", {}))
+        self.output_path = self.output_fs.sep.join([output_path, self._name])
+        create_or_overwrite_dir(self.output_path, storage_options=self.write_kwargs.get("storage_options", {}))
 
     def setup(self, _worker_metadata: "WorkerMetadata | None" = None) -> None:
         """Initialize the GPU MinHash processor and ID generator."""
@@ -292,7 +292,7 @@ class MinHashStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationI
             msg = "MinHash processor or ID generator not initialized. Call setup() first."
             raise RuntimeError(msg)
 
-        output_file = self.output_fs.sep.join([self.output_dir, f"{task.task_id}.parquet"])
+        output_file = self.output_fs.sep.join([self.output_path, f"{task.task_id}.parquet"])
 
         read_kwargs = self.read_kwargs.copy()
 
