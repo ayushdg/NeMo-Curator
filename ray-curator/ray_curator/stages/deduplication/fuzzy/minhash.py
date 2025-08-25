@@ -320,7 +320,7 @@ class MinHashStage(ProcessingStage[FileGroupTask, FileGroupTask], DeduplicationI
                 **task._metadata,
                 "minhash_field": self.minhash_field,
                 "num_hashes": self.num_hashes,
-                "storage_options": self.write_kwargs.get("storage_options", {}),
+                "storage_options": self.write_kwargs.get("storage_options"),
             },
             _stage_perf=task._stage_perf,
         )
