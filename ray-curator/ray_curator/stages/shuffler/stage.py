@@ -10,7 +10,7 @@ from ray_curator.tasks import FileGroupTask
 from ray_curator.utils.file_utils import create_or_overwrite_dir
 
 
-class ShufflerStage(ProcessingStage[FileGroupTask, FileGroupTask]):
+class ShuffleStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     """
     Stage that performs generic shuffling on specified columns from a FileGroupTask.
     This stage uses the BulkRapidsMPFShuffler with cuDF I/O for efficient GPU-based shuffling.
@@ -37,7 +37,7 @@ class ShufflerStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         Whether the underlying rapidsmpf shuffler should collect shuffle statistics.
     """
 
-    _name = "ShufflerStage"
+    _name = "ShuffleStage"
     _resources = Resources(gpus=1.0)
 
     # Use BulkRapidsMPFShuffler directly
@@ -78,7 +78,7 @@ class ShufflerStage(ProcessingStage[FileGroupTask, FileGroupTask]):
             "write_kwargs": self.write_kwargs,
         }
         # Handle output path
-        create_or_overwrite_dir(self.output_path)
+        create_or_overwrite_dir(self.output_path, storage_options=self.write_kwargs.get("storage_options", {}))
 
     def process(self, task: FileGroupTask) -> FileGroupTask:
         """Not implemented for actor-based stages."""
@@ -100,7 +100,7 @@ class ShufflerStage(ProcessingStage[FileGroupTask, FileGroupTask]):
             )
             raise RuntimeError(msg)
 
-    def read_and_shuffle(self, task: FileGroupTask) -> FileGroupTask:
+    def read_and_insert(self, task: FileGroupTask) -> FileGroupTask:
         """Read files and insert into shuffler."""
         self._check_actor_obj()
         self.output_columns = self._actor_obj.read_and_insert(task.data)
