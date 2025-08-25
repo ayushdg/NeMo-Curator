@@ -8,7 +8,7 @@ import ray
 from loguru import logger
 
 from ray_curator.backends.base import BaseStageAdapter
-from ray_curator.backends.experimental.utils import get_worker_metadata_and_node_id
+from ray_curator.backends.experimental.utils import RayStageSpecKeys, get_worker_metadata_and_node_id
 from ray_curator.tasks import FileGroupTask
 
 if TYPE_CHECKING:
@@ -59,8 +59,10 @@ class ShuffleStageAdapter(BaseStageAdapter):
             if num_input_tasks is None:
                 err_msg = "Shuffle total_nparts could not be set automatically. Please set it manually during stage initialization."
                 raise ValueError(err_msg)
-
-            self.output_nparts = max(1, 2 ** math.floor(math.log2(num_input_tasks)))
+            if self.stage.ray_stage_spec().get(RayStageSpecKeys.IS_LSH_STAGE, False):
+                self.output_nparts = max(1, 2 ** math.floor(math.log2(num_input_tasks)))
+            else:
+                self.output_nparts = num_input_tasks
         else:
             self.output_nparts = stage_class_kwargs.get("total_nparts")
 
@@ -110,7 +112,7 @@ class ShuffleStageAdapter(BaseStageAdapter):
         self, tasks: list[FileGroupTask], band_range: tuple[int, int] | None = None
     ) -> list[FileGroupTask]:
         """Read and insert tasks into the shuffler."""
-        insert_kwargs = {"bands_range": band_range} if band_range is not None else {}
+        insert_kwargs = {"band_range": band_range} if band_range is not None else {}
         results = []
         for task in tasks:
             results.append(self.stage.read_and_insert(task, **insert_kwargs))

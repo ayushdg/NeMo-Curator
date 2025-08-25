@@ -291,7 +291,7 @@ class RayActorPoolExecutor(BaseExecutor):
         actor_pool = ActorPool(actors)
         stage_batch_size: int = ray.get(actors[0].get_batch_size.remote())
         task_batches = self._generate_task_batches(tasks, batch_size=stage_batch_size)
-        insert_kwargs = {"bands_range": band_range} if band_range is not None else {}
+        insert_kwargs = {"band_range": band_range} if band_range is not None else {}
 
         # Step 1: Insert tasks into shuffler
         _ = list(
