@@ -78,7 +78,7 @@ class BucketsToEdgesStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         edges = [list(edge) for edge in edges]
         edges = pa.Table.from_pandas(pd.DataFrame(edges, columns=[f"{self.doc_id_field}_x", f"{self.doc_id_field}_y"]))
 
-        output_path = self.output_fs.sep.join([self.output_path, f"{task.task_id}.parquet"])
+        output_path = self.output_fs.sep.join([self.output_path, f"{task._uuid}.parquet"])
         pq.write_table(edges, output_path, filesystem=self.output_fs)
         return FileGroupTask(
             task_id=f"{task.task_id}",

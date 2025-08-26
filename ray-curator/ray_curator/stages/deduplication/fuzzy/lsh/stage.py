@@ -123,6 +123,7 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     def read_and_insert(self, task: FileGroupTask, band_range: tuple[int, int]) -> FileGroupTask:
         self._check_actor_obj()
         result = self._actor_obj.read_and_insert(task.data, band_range)
+        self._current_band_range = band_range
         self.output_columns = result
         self.dataset_name = task.dataset_name
         return task
@@ -133,10 +134,11 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
 
     def extract_and_write(self) -> list[FileGroupTask]:
         self._check_actor_obj()
+        current_band_min, current_band_max = self._current_band_range
         partition_paths = self._actor_obj.extract_and_write()
         return [
             FileGroupTask(
-                task_id=partition_id,
+                task_id=f"b{current_band_min}_b{current_band_max}_{partition_id}",
                 dataset_name=self.dataset_name + f"{self.name}",
                 data=[path],
                 _metadata={
