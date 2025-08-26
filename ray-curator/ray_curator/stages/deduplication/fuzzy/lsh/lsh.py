@@ -87,7 +87,7 @@ class LSHActor(BulkRapidsMPFShuffler):
         id_field: str = CURATOR_DEDUP_ID_STR,
         minhash_field: str = CURATOR_DEFAULT_MINHASH_FIELD,
         output_path: str = "./",
-        rmm_pool_size: int = 1024 * 1024 * 1024,
+        rmm_pool_size: int | Literal["auto"] | None = "auto",
         spill_memory_limit: int | Literal["auto"] | None = "auto",
         *,
         enable_statistics: bool = False,

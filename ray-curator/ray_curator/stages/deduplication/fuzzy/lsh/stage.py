@@ -64,7 +64,7 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
     read_kwargs: dict[str, Any] | None = None
     write_kwargs: dict[str, Any] | None = None
     # Shuffle parameters
-    rmm_pool_size: int = 1024 * 1024 * 1024
+    rmm_pool_size: int | Literal["auto"] | None = "auto"
     spill_memory_limit: int | Literal["auto"] | None = "auto"
     enable_statistics: bool = False
     bands_per_iteration: int = 5  # number of bands to process in each iteration

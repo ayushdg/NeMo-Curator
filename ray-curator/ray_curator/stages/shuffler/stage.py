@@ -62,7 +62,7 @@ class ShuffleStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         output_path: str = "./",
         read_kwargs: dict[str, Any] | None = None,
         write_kwargs: dict[str, Any] | None = None,
-        rmm_pool_size: int | None = None,
+        rmm_pool_size: int | Literal["auto"] | None = "auto",
         spill_memory_limit: int | Literal["auto"] | None = "auto",
         enable_statistics: bool = False,
     ):
