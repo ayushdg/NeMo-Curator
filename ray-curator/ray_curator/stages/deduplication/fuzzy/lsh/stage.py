@@ -138,7 +138,7 @@ class LSHStage(ProcessingStage[FileGroupTask, FileGroupTask]):
             FileGroupTask(
                 task_id=partition_id,
                 dataset_name=self.dataset_name + f"{self.name}",
-                data=path,
+                data=[path],
                 _metadata={
                     "partition_index": partition_id,
                     "total_partitions": len(partition_paths),
