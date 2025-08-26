@@ -77,6 +77,8 @@ class TestShuffleStage:
             (["category"], None),
             (["category"], 1),
             (["category", "value"], 3),
+            # num_output_parititons > num_input_partitions
+            (["category", "value"], 16),
         ],
     )
     def test_shuffle(
