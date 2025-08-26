@@ -61,6 +61,8 @@ class ShuffleStageAdapter(BaseStageAdapter):
                 err_msg = "Shuffle total_nparts could not be set automatically. Please set it manually during stage initialization."
                 raise ValueError(err_msg)
             if self.stage.ray_stage_spec().get(RayStageSpecKeys.IS_LSH_STAGE, False):
+                # Rounds down to the nearest power of 2.
+                # Emperically this improves shuffle performance for LSH without significantly increasing the risk of OOMs.
                 self.output_nparts = max(1, 2 ** math.floor(math.log2(num_input_tasks)))
             else:
                 self.output_nparts = max(1, num_input_tasks)
