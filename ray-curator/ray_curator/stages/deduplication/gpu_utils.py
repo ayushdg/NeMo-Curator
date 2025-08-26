@@ -15,7 +15,7 @@ def get_device_free_memory() -> int | None:
     Returns None if the GPU is not available or information could not be retrieved.
     """
     try:
-        index = ray.get_gpu_ids()[0] if ray.is_initialized() else 0
+        index = int(ray.get_gpu_ids()[0]) if ray.is_initialized() else 0
     except IndexError:
         return None
     try:

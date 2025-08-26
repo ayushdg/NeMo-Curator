@@ -85,11 +85,8 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
         if isinstance(rmm_pool_size, int):
             self.rmm_pool_size = align_down_to_256(rmm_pool_size)
         elif rmm_pool_size == "auto":
-            self.rmm_pool_size = (
-                align_down_to_256(int(get_device_free_memory() * 0.9))
-                if get_device_free_memory() is not None
-                else None
-            )
+            free_memory = get_device_free_memory()
+            self.rmm_pool_size = align_down_to_256(int(free_memory * 0.9)) if free_memory is not None else None
         elif rmm_pool_size is None:
             self.rmm_pool_size = None
         else:
