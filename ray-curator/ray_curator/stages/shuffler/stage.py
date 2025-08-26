@@ -41,6 +41,8 @@ class ShuffleStage(ProcessingStage[FileGroupTask, FileGroupTask]):
         Keyword arguments for cudf.to_parquet method.
     rmm_pool_size
         Size of the RMM GPU memory pool in bytes.
+        If "auto", the memory pool is set to 90% of the free GPU memory.
+        If None, the memory pool is set to 50% of the free GPU memory that can expand if needed.
     spill_memory_limit
         Device memory limit in bytes for spilling to host.
         If "auto", the limit is set to 80% of the RMM pool size.
