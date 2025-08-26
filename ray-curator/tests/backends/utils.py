@@ -208,7 +208,8 @@ class SplitIntoRowsStage(ProcessingStage[DocumentBatch, DocumentBatch]):
 class StageWithSetup(ProcessingStage[DocumentBatch, DocumentBatch]):
     """Setup stage that adds a numeric field to the document."""
 
-    TEMP_FILE_PATH = "/tmp/numeric_setup.txt"  # noqa: S108
+    def __init__(self, temp_file_path: Path):
+        self.TEMP_FILE_PATH = temp_file_path
 
     _name = "stage_with_setup"
 
@@ -260,7 +261,6 @@ def create_test_pipeline(input_dir: Path, output_dir: Path) -> tuple[Pipeline, A
         JsonlReader(
             file_paths=str(input_dir),
             files_per_partition=FILES_PER_PARTITION,
-            reader="pandas",
         )
     )
 
@@ -273,10 +273,10 @@ def create_test_pipeline(input_dir: Path, output_dir: Path) -> tuple[Pipeline, A
     pipeline.add_stage(AddLengthStage("doc_length_2"))
 
     # Add StageWithSetup stage
-    pipeline.add_stage(StageWithSetup())
+    pipeline.add_stage(StageWithSetup(input_dir / "temp_file.txt"))
 
     # Add JsonlWriter stage
-    pipeline.add_stage(JsonlWriter(output_dir=str(output_dir)))
+    pipeline.add_stage(JsonlWriter(path=str(output_dir)))
 
     return pipeline
 
