@@ -159,7 +159,7 @@ class FuzzyDeduplicationWorkflow:
                 FilePartitioningStage(
                     file_paths=self.input_path,
                     file_extensions=self.input_file_extensions,
-                    files_per_partition=30,  # TODO: Replace with blocksize
+                    blocksize="1GiB",  # compressed size of 1GiB
                     storage_options=self.read_kwargs.get("storage_options") if self.read_kwargs is not None else None,
                 ),
             )
@@ -189,7 +189,7 @@ class FuzzyDeduplicationWorkflow:
                 FilePartitioningStage(
                     file_paths=cache_dir_fs.sep.join([self.cache_path, "MinHashStage"]),
                     file_extensions=[".parquet"],
-                    files_per_partition=8,
+                    blocksize="2GiB",
                     storage_options=self.cache_kwargs.get("storage_options")
                     if self.cache_kwargs is not None
                     else None,
@@ -251,9 +251,10 @@ class FuzzyDeduplicationWorkflow:
         lsh_duplicate_identification_pipeline = self._generate_lsh_duplicate_identification_pipeline()
         lsh_start_time = time.time()
         # LSH stage generates it's own input tasks from the minhash directory
-        lsh_duplicate_identification_pipeline.run(executor=executor, initial_tasks=None)
+        removal_id_tasks = lsh_duplicate_identification_pipeline.run(executor=executor, initial_tasks=None)
         lsh_end_time = time.time()
         logger.info(f"LSH + duplicate identification pipeline completed in {lsh_end_time - lsh_start_time} seconds")
-
         end_time = time.time()
+        num_removed_documents = sum(task._metadata.get("num_removal_ids", 0) for task in removal_id_tasks)
+        logger.info(f"Number of documents removed: {num_removed_documents}")
         logger.info(f"Fuzzy deduplication pipeline completed in {end_time - start_time} seconds")
