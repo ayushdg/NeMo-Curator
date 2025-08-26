@@ -46,6 +46,8 @@ class GenerateRemovalIDs(ShuffleStage):
         Keyword arguments for cudf.to_parquet method.
     rmm_pool_size
         Size of the RMM GPU memory pool in bytes.
+        If "auto", the memory pool is set to 90% of the free GPU memory.
+        If None, the memory pool is set to 50% of the free GPU memory that can expand if needed.
     spill_memory_limit
         Device memory limit in bytes for spilling to host.
         If "auto", the limit is set to 80% of the RMM pool size.
@@ -64,7 +66,7 @@ class GenerateRemovalIDs(ShuffleStage):
         output_path: str = "./",
         read_kwargs: dict[str, Any] | None = None,
         write_kwargs: dict[str, Any] | None = None,
-        rmm_pool_size: int | None = None,
+        rmm_pool_size: int | Literal["auto"] | None = "auto",
         spill_memory_limit: int | Literal["auto"] | None = "auto",
         enable_statistics: bool = False,
     ):

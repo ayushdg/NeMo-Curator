@@ -201,7 +201,8 @@ class FuzzyDeduplicationWorkflow:
                     read_kwargs=self.read_kwargs,
                     write_kwargs=self.cache_kwargs,
                     bands_per_iteration=self.bands_per_iteration,
-                    rmm_pool_size=None,  # TODO: Better rmm pool size handling
+                    rmm_pool_size="auto",
+                    spill_memory_limit="auto",
                 ),
                 BucketsToEdgesStage(
                     output_path=self.cache_path,
@@ -217,6 +218,8 @@ class FuzzyDeduplicationWorkflow:
                     output_path=self.cache_path,
                     read_kwargs=self.read_kwargs,
                     write_kwargs=self.cache_kwargs,
+                    rmm_pool_size="auto",
+                    spill_memory_limit="auto",
                 ),
             ],
         )
