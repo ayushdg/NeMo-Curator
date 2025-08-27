@@ -270,7 +270,7 @@ class LSHActor(BulkRapidsMPFShuffler):
             # Clean up memory
             del df, grouped_df
 
-    def extract_and_write(self) -> list[tuple[int, str]]:
+    def extract_and_write(self) -> list[dict[str, Any]]:
         """
         Extract shuffled partitions, group by bucket ID, and write results to files.
 
@@ -280,6 +280,15 @@ class LSHActor(BulkRapidsMPFShuffler):
 
         This generator-based approach is more memory-efficient since it processes
         one partition at a time rather than collecting all partitions in memory.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            A list of dictionaries containing partition information.
+            Each dictionary contains:
+            - partition_id: The ID of the partition
+            - path: The path to the partition file
+            - num_docs: The number of documents in the partition
         """
         partition_paths = []
         write_kwargs = self.write_kwargs.copy()
@@ -290,7 +299,7 @@ class LSHActor(BulkRapidsMPFShuffler):
 
             # Write to file immediately
             grouped_df.to_parquet(path, **write_kwargs)
-            partition_paths.append((partition_id, path))
+            partition_paths.append({"partition_id": partition_id, "path": path, "num_docs": len(grouped_df)})
             # Clean up to release memory
             del grouped_df
 

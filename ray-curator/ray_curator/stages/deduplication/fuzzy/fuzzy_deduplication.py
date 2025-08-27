@@ -181,7 +181,7 @@ class FuzzyDeduplicationWorkflow:
             stages=stages,
         )
 
-    def _generate_lsh_duplicate_identification_pipeline(self) -> Pipeline:
+    def _generate_lsh_pipeline(self) -> Pipeline:
         cache_dir_fs = get_fs(self.cache_path, self.cache_kwargs)
         return Pipeline(
             name="lsh_duplicate_identification_pipeline",
@@ -204,6 +204,13 @@ class FuzzyDeduplicationWorkflow:
                     rmm_pool_size="auto",
                     spill_memory_limit="auto",
                 ),
+            ],
+        )
+
+    def _generate_connected_components_pipeline(self) -> Pipeline:
+        return Pipeline(
+            name="connected_components_pipeline",
+            stages=[
                 BucketsToEdgesStage(
                     output_path=self.cache_path,
                     read_kwargs=self.read_kwargs,
@@ -251,13 +258,31 @@ class FuzzyDeduplicationWorkflow:
         minhash_end_time = time.time()
         logger.info(f"Minhash pipeline completed in {minhash_end_time - start_time} seconds")
 
-        lsh_duplicate_identification_pipeline = self._generate_lsh_duplicate_identification_pipeline()
+        lsh_pipeline = self._generate_lsh_pipeline()
         lsh_start_time = time.time()
         # LSH stage generates it's own input tasks from the minhash directory
-        removal_id_tasks = lsh_duplicate_identification_pipeline.run(executor=executor, initial_tasks=None)
+        lsh_tasks = lsh_pipeline.run(executor=executor, initial_tasks=None)
         lsh_end_time = time.time()
-        logger.info(f"LSH + duplicate identification pipeline completed in {lsh_end_time - lsh_start_time} seconds")
+        logger.info(f"LSH pipeline completed in {lsh_end_time - lsh_start_time} seconds")
+
+        valid_lsh_tasks = [task for task in lsh_tasks if task._metadata.get("num_docs", 0) > 0]
+        if len(valid_lsh_tasks) == 0:
+            logger.info("No potential duplicates found in the dataset. Skipping connected components pipeline.")
+        else:
+            connected_components_pipeline = self._generate_connected_components_pipeline()
+            connected_components_start_time = time.time()
+            connected_components_tasks = connected_components_pipeline.run(
+                executor=executor, initial_tasks=valid_lsh_tasks
+            )
+            connected_components_end_time = time.time()
+            logger.info(
+                f"Connected components pipeline completed in {connected_components_end_time - connected_components_start_time} seconds"
+            )
+            num_removed_documents = sum(
+                task._metadata.get("num_removal_ids", 0) for task in connected_components_tasks
+            )
+            logger.info(f"Number of documents removed: {num_removed_documents}")
+
         end_time = time.time()
-        num_removed_documents = sum(task._metadata.get("num_removal_ids", 0) for task in removal_id_tasks)
-        logger.info(f"Number of documents removed: {num_removed_documents}")
+
         logger.info(f"Fuzzy deduplication pipeline completed in {end_time - start_time} seconds")
