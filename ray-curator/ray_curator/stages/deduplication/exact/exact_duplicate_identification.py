@@ -58,7 +58,7 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
         Whether the underlying rapidsmpf shuffler should collect shuffle statistics.
     """
 
-    _name = "ExactDuplicates"
+    _name = "ExactDuplicateIds"
 
     def __init__(  # noqa: PLR0913
         self,
@@ -97,6 +97,9 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
         """
         Get the removal ids for the given dataframe.
         """
+        if len(df) == 0:
+            # return empty dataframe with id column
+            return df[[CURATOR_DEDUP_ID_STR]]
         removal_ids = df[df[EXACT_DUPLICATE_GROUP_FIELD].duplicated(keep="first")][CURATOR_DEDUP_ID_STR]
         removal_ids = removal_ids.sort_values(ignore_index=True)
         return removal_ids.to_frame()
