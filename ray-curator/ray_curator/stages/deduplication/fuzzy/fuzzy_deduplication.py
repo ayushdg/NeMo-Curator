@@ -7,7 +7,7 @@ from ray_curator.backends.experimental.ray_actor_pool import RayActorPoolExecuto
 from ray_curator.pipeline import Pipeline
 from ray_curator.stages.deduplication.fuzzy.buckets_to_edges import BucketsToEdgesStage
 from ray_curator.stages.deduplication.fuzzy.connected_components import ConnectedComponentsStage
-from ray_curator.stages.deduplication.fuzzy.generate_duplicate_ids import GenerateRemovalIDs
+from ray_curator.stages.deduplication.fuzzy.identify_duplicates import IdentifyDuplicatesStage
 from ray_curator.stages.deduplication.fuzzy.lsh.stage import LSHStage
 from ray_curator.stages.deduplication.fuzzy.minhash import MinHashStage
 from ray_curator.stages.deduplication.id_generator import create_id_generator_actor, get_id_generator_actor
@@ -44,6 +44,7 @@ class FuzzyDeduplicationWorkflow:
         cache_path: str,
         output_path: str | None = None,
         input_filetype: Literal["jsonl", "parquet"] = "parquet",
+        input_blocksize: str | int = "1GiB",
         input_file_extensions: list[str] | None = None,
         read_kwargs: dict[str, Any] | None = None,
         cache_kwargs: dict[str, Any] | None = None,
@@ -71,6 +72,11 @@ class FuzzyDeduplicationWorkflow:
             Only used if `perform_removal` is True.
         input_filetype: Literal["jsonl", "parquet"]
             Format of the input dataset.
+        input_blocksize: str | int
+            Size of the input blocks to read in.
+            If an integer is provided, it will be interpreted as bytes.
+            If a string is provided, it will be interpreted as a size with a unit.
+            If not provided, the default blocksize of 1GiB will be used.
         input_file_extensions: list[str] | None
             File extensions of the input dataset.
             If not provided, the default extensions for the input_filetype will be used.
@@ -112,6 +118,7 @@ class FuzzyDeduplicationWorkflow:
         self.cache_path = cache_path
         self.output_path = output_path
         self.input_filetype = input_filetype
+        self.input_blocksize = input_blocksize
         self.input_file_extensions = input_file_extensions
         self.read_kwargs = read_kwargs
         self.cache_kwargs = cache_kwargs
@@ -152,14 +159,14 @@ class FuzzyDeduplicationWorkflow:
         if not self.perform_removal and self.output_path is not None:
             logger.warning("output_path will be unused as perform_removal is False")
 
-    def _generate_minhash_pipeline(self, generate_input_filegroups: bool) -> Pipeline:
+    def _create_minhash_pipeline(self, generate_input_filegroups: bool) -> Pipeline:
         stages = []
         if generate_input_filegroups:
             stages.append(
                 FilePartitioningStage(
                     file_paths=self.input_path,
                     file_extensions=self.input_file_extensions,
-                    blocksize="1GiB",  # compressed size of 1GiB
+                    blocksize=self.input_blocksize,
                     storage_options=self.read_kwargs.get("storage_options") if self.read_kwargs is not None else None,
                 ),
             )
@@ -181,7 +188,7 @@ class FuzzyDeduplicationWorkflow:
             stages=stages,
         )
 
-    def _generate_lsh_pipeline(self) -> Pipeline:
+    def _create_lsh_pipeline(self) -> Pipeline:
         cache_dir_fs = get_fs(self.cache_path, self.cache_kwargs)
         return Pipeline(
             name="lsh_duplicate_identification_pipeline",
@@ -207,7 +214,7 @@ class FuzzyDeduplicationWorkflow:
             ],
         )
 
-    def _generate_connected_components_pipeline(self) -> Pipeline:
+    def _create_connected_components_pipeline(self) -> Pipeline:
         return Pipeline(
             name="connected_components_pipeline",
             stages=[
@@ -221,7 +228,7 @@ class FuzzyDeduplicationWorkflow:
                     read_kwargs=self.read_kwargs,
                     write_kwargs=self.cache_kwargs,
                 ),
-                GenerateRemovalIDs(
+                IdentifyDuplicatesStage(
                     output_path=self.cache_path,
                     read_kwargs=self.read_kwargs,
                     write_kwargs=self.cache_kwargs,
@@ -253,12 +260,12 @@ class FuzzyDeduplicationWorkflow:
             create_id_generator_actor()
 
         start_time = time.time()
-        minhash_pipeline = self._generate_minhash_pipeline(generate_input_filegroups=initial_tasks is None)
+        minhash_pipeline = self._create_minhash_pipeline(generate_input_filegroups=initial_tasks is None)
         minhash_pipeline.run(executor=executor, initial_tasks=initial_tasks)
         minhash_end_time = time.time()
         logger.info(f"Minhash pipeline completed in {minhash_end_time - start_time} seconds")
 
-        lsh_pipeline = self._generate_lsh_pipeline()
+        lsh_pipeline = self._create_lsh_pipeline()
         lsh_start_time = time.time()
         # LSH stage generates it's own input tasks from the minhash directory
         lsh_tasks = lsh_pipeline.run(executor=executor, initial_tasks=None)
@@ -269,7 +276,7 @@ class FuzzyDeduplicationWorkflow:
         if len(valid_lsh_tasks) == 0:
             logger.info("No potential duplicates found in the dataset. Skipping connected components pipeline.")
         else:
-            connected_components_pipeline = self._generate_connected_components_pipeline()
+            connected_components_pipeline = self._create_connected_components_pipeline()
             connected_components_start_time = time.time()
             connected_components_tasks = connected_components_pipeline.run(
                 executor=executor, initial_tasks=valid_lsh_tasks

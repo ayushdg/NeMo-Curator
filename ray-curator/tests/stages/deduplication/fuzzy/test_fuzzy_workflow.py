@@ -13,6 +13,7 @@ import ray
 from ray_curator.stages.deduplication.fuzzy.fuzzy_deduplication import (
     FuzzyDeduplicationWorkflow,
 )
+from ray_curator.stages.deduplication.fuzzy.identify_duplicates import DUPLICATE_IDS_SUBDIR
 from ray_curator.stages.deduplication.fuzzy.utils import (
     CURATOR_FUZZY_DUPLICATE_GROUP_FIELD,
 )
@@ -201,7 +202,7 @@ class TestFuzzyDuplicates:
             for got_group, expected_group in zip(result_df, duplicate_docs, strict=False)
         )
 
-        removal_ids_df = cudf.read_parquet(cache_path / "RemovalIDs")
+        removal_ids_df = cudf.read_parquet(cache_path / DUPLICATE_IDS_SUBDIR)
         removal_ids_df = removal_ids_df.merge(original_df_with_curator_ids, on=CURATOR_DEDUP_ID_STR, how="left")
         removal_ids = set(removal_ids_df.id.to_arrow().to_pylist())
         # For every duplicate group assert that 1 document was not removed
@@ -234,7 +235,7 @@ class TestFuzzyDuplicates:
         workflow.run(initial_tasks=tasks)
 
         assert not (cache_path / "ConnectedComponentsStage").exists()
-        assert not (cache_path / "RemovalIDs").exists()
+        assert not (cache_path / DUPLICATE_IDS_SUBDIR).exists()
         assert not (cache_path / "BucketsToEdgesStage").exists()
 
         lsh_df = cudf.read_parquet(cache_path / "LSHStage")

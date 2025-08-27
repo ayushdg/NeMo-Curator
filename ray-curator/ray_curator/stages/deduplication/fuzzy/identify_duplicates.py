@@ -24,8 +24,10 @@ from ray_curator.utils.file_utils import get_fs
 if TYPE_CHECKING:
     import cudf
 
+DUPLICATE_IDS_SUBDIR = "FuzzyDuplicateIds"
 
-class GenerateRemovalIDs(ShuffleStage):
+
+class IdentifyDuplicatesStage(ShuffleStage):
     """
     Stage that generates removal IDs for fuzzy deduplication.
     The approach involves shuffling the data based on the duplicate group field similar to grouping by the group field.
@@ -56,7 +58,7 @@ class GenerateRemovalIDs(ShuffleStage):
         Whether the underlying rapidsmpf shuffler should collect shuffle statistics.
     """
 
-    _name = "RemovalIDs"
+    _name = "IdentifyDuplicates"
 
     def __init__(  # noqa: PLR0913
         self,
@@ -75,7 +77,7 @@ class GenerateRemovalIDs(ShuffleStage):
         self.output_fs = get_fs(
             output_path, storage_options=read_kwargs.get("storage_options") if read_kwargs is not None else None
         )
-        self.output_path = self.output_fs.sep.join([output_path, self.name])
+        self.output_path = self.output_fs.sep.join([output_path, DUPLICATE_IDS_SUBDIR])
         self.write_kwargs = write_kwargs
 
         super().__init__(
@@ -122,9 +124,9 @@ class GenerateRemovalIDs(ShuffleStage):
             removal_ids = self._get_removal_ids(shuffled_partition_df)
 
             output_file = self.output_fs.sep.join([self.output_path, f"part.{partition_id}.parquet"])
-            # If user has not specified row_group_size_rows, set it to the lower of 10% of the number of removal ids or 1M (default) or a minimum of 100k (for small datasets)
+            # If user has not specified row_group_size_rows, set it to the lower of 10% of the number of removal ids or 1M (default) or a minimum of 1k (for small datasets)
             write_kwargs["row_group_size_rows"] = write_kwargs.get(
-                "row_group_size_rows", max(100_000, min(len(removal_ids) // 10, 1000 * 1000))
+                "row_group_size_rows", max(1000, min(len(removal_ids) // 10, 1000 * 1000))
             )
             removal_ids.to_parquet(output_file, **write_kwargs)
             result_tasks.append(
