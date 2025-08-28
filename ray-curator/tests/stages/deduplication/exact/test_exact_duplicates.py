@@ -33,8 +33,8 @@ def get_original_df_with_curator_ids(
 ) -> cudf.DataFrame:
     """Get mapping from curator IDs to original IDs using IDGeneratorActor.
     Args:
-        files: List of parquet files that were processed
-        id_column: Name of the original ID column in the data
+        tasks: List of tasks that were processed
+        filetype: Type of the input files
     Returns:
         Dictionary mapping curator_dedup_id -> original_id
     """
