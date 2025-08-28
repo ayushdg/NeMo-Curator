@@ -12,10 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# ruff: noqa: E402
+
 from pathlib import Path
 from typing import Literal
 
-import cudf
+import pytest
+
+cudf = pytest.importorskip("cudf")
 import numpy as np
 import pandas as pd
 import pytest

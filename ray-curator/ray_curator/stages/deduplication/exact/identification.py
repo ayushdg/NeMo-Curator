@@ -40,6 +40,9 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
         Field name representing the field to find duplicates in.
     output_path
         Path to write output files.
+    input_filetype
+        Type of the input files.
+        Must be one of "jsonl" or "parquet". Default is "parquet".
     read_kwargs
         Keyword arguments for cudf.read_parquet method.
     write_kwargs
@@ -68,7 +71,7 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
         self,
         text_field: str,
         output_path: str,
-        input_filetype: Literal["jsonl", "parquet"] = "jsonl",
+        input_filetype: Literal["jsonl", "parquet"] = "parquet",
         read_kwargs: dict[str, Any] | None = None,
         write_kwargs: dict[str, Any] | None = None,
         assign_id: bool = True,
