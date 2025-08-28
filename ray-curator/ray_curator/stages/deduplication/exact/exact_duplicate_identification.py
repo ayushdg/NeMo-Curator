@@ -166,7 +166,7 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
             result_tasks.append(
                 FileGroupTask(
                     task_id=partition_id,
-                    dataset_name=self.dataset_name + f"{self.name}",
+                    dataset_name=f"{self.dataset_name}_{self.name}",
                     data=[output_file],
                     _metadata={
                         "partition_index": partition_id,
