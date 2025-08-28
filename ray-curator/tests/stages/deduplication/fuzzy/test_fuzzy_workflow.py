@@ -8,24 +8,26 @@ cudf = pytest.importorskip("cudf")
 import numpy as np
 import pandas as pd
 import pytest
-import ray
 
 from ray_curator.stages.deduplication.fuzzy.identify_duplicates import DUPLICATE_IDS_SUBDIR
 from ray_curator.stages.deduplication.fuzzy.utils import (
     CURATOR_FUZZY_DUPLICATE_GROUP_FIELD,
 )
 from ray_curator.stages.deduplication.fuzzy.workflow import (
+    ID_GENERATOR_OUTPUT_FILENAME,
     FuzzyDeduplicationWorkflow,
 )
 from ray_curator.stages.deduplication.id_generator import (
     CURATOR_DEDUP_ID_STR,
-    get_id_generator_actor,
+    IdGeneratorBase,
+    create_id_generator_actor,
+    kill_id_generator_actor,
 )
 from ray_curator.tasks import FileGroupTask
 
 
 def get_original_df_with_curator_ids(
-    tasks: list[FileGroupTask], filetype: Literal["parquet", "jsonl"]
+    id_generator_path: str, tasks: list[FileGroupTask], filetype: Literal["parquet", "jsonl"]
 ) -> cudf.DataFrame:
     """Get mapping from curator IDs to original IDs using IDGeneratorActor.
 
@@ -36,10 +38,10 @@ def get_original_df_with_curator_ids(
     Returns:
         Dictionary mapping curator_dedup_id -> original_id
     """
-    id_actor = get_id_generator_actor()
+    id_generator = IdGeneratorBase.from_disk(id_generator_path)
     dfs = []
     for task in tasks:
-        min_id, max_id = ray.get(id_actor.get_batch_range.remote(task.data, None))
+        min_id, max_id = id_generator.get_batch_range(task.data, None)
         df = cudf.read_parquet(task.data) if filetype == "parquet" else cudf.read_json(task.data, lines=True)
         df[CURATOR_DEDUP_ID_STR] = np.arange(min_id, max_id + 1)
         dfs.append(df)
@@ -71,7 +73,7 @@ def create_fuzzy_dedup_test_data() -> pd.DataFrame:
 
 
 @pytest.fixture
-def fuzzy_dedup_data_jsonl(tmp_path: Path) -> tuple[list[str], list[FileGroupTask]]:
+def fuzzy_dedup_data_jsonl(tmp_path: Path) -> list[FileGroupTask]:
     """Create test data with duplicates and return file paths and FileGroupTasks."""
     df = create_fuzzy_dedup_test_data()
 
@@ -82,17 +84,15 @@ def fuzzy_dedup_data_jsonl(tmp_path: Path) -> tuple[list[str], list[FileGroupTas
     df.iloc[3:].to_json(file2, orient="records", lines=True)
 
     files = [str(file1), str(file2)]
-    tasks = [
+    return [
         FileGroupTask(
             task_id="file_group_0", dataset_name="test_dataset", data=files, _metadata={"source_files": files}
         )
     ]
 
-    return files, tasks
-
 
 @pytest.fixture
-def fuzzy_dedup_data_parquet(tmp_path: Path) -> tuple[list[str], list[FileGroupTask]]:
+def fuzzy_dedup_data_parquet(tmp_path: Path) -> list[FileGroupTask]:
     """Create test data with duplicates and return file paths and FileGroupTasks."""
     df = create_fuzzy_dedup_test_data()
 
@@ -103,17 +103,15 @@ def fuzzy_dedup_data_parquet(tmp_path: Path) -> tuple[list[str], list[FileGroupT
     df.iloc[3:].to_parquet(file2)
 
     files = [str(file1), str(file2)]
-    tasks = [
+    return [
         FileGroupTask(
             task_id="file_group_0", dataset_name="test_dataset", data=files, _metadata={"source_files": files}
         )
     ]
 
-    return files, tasks
-
 
 @pytest.fixture
-def no_duplicates_fuzzy_dedup_data(tmp_path: Path) -> tuple[list[str], list[FileGroupTask]]:
+def no_duplicates_fuzzy_dedup_data(tmp_path: Path) -> list[FileGroupTask]:
     """Create test data with no duplicates."""
     data = {
         "id": [1, 2, 3, 4],
@@ -134,17 +132,15 @@ def no_duplicates_fuzzy_dedup_data(tmp_path: Path) -> tuple[list[str], list[File
     df.iloc[2:].to_parquet(file2)
 
     files = [str(file1), str(file2)]
-    tasks = [
+    return [
         FileGroupTask(
             task_id="file_group_0", dataset_name="test_dataset", data=files, _metadata={"source_files": files}
         )
     ]
 
-    return files, tasks
-
 
 @pytest.mark.gpu
-@pytest.mark.usefixtures("shared_ray_client", "ray_client_with_id_generator")
+@pytest.mark.usefixtures("shared_ray_client")
 class TestFuzzyDuplicates:
     @pytest.mark.parametrize("use_64_bit_hash", [False, True])
     @pytest.mark.parametrize(
@@ -164,14 +160,14 @@ class TestFuzzyDuplicates:
         duplicate_docs: list[list[int]],
         tmp_path: Path,
     ) -> None:
-        files, tasks = request.getfixturevalue(f"fuzzy_dedup_data_{filetype}")
+        tasks = request.getfixturevalue(f"fuzzy_dedup_data_{filetype}")
         cache_path = tmp_path / "cache"
+        output_path = tmp_path / "output"
         cache_path.mkdir(exist_ok=True)
 
         workflow = FuzzyDeduplicationWorkflow(
-            input_path=files,
             cache_path=str(cache_path),
-            output_path=None,
+            output_path=str(output_path),
             input_filetype=filetype,
             text_field=text_field,
             perform_removal=False,
@@ -187,7 +183,9 @@ class TestFuzzyDuplicates:
 
         # Verify the duplicate groups found match expected
         connected_components_df = cudf.read_parquet(cache_path / "ConnectedComponentsStage")
-        original_df_with_curator_ids = get_original_df_with_curator_ids(tasks, filetype)
+        original_df_with_curator_ids = get_original_df_with_curator_ids(
+            output_path / ID_GENERATOR_OUTPUT_FILENAME, tasks, filetype
+        )
         connected_components_df = connected_components_df.merge(
             original_df_with_curator_ids, on=CURATOR_DEDUP_ID_STR, how="left"
         )
@@ -202,7 +200,7 @@ class TestFuzzyDuplicates:
             for got_group, expected_group in zip(result_df, duplicate_docs, strict=False)
         )
 
-        removal_ids_df = cudf.read_parquet(cache_path / DUPLICATE_IDS_SUBDIR)
+        removal_ids_df = cudf.read_parquet(output_path / DUPLICATE_IDS_SUBDIR)
         removal_ids_df = removal_ids_df.merge(original_df_with_curator_ids, on=CURATOR_DEDUP_ID_STR, how="left")
         removal_ids = set(removal_ids_df.id.to_arrow().to_pylist())
         # For every duplicate group assert that 1 document was not removed
@@ -210,17 +208,17 @@ class TestFuzzyDuplicates:
 
     def test_fuzzy_dedup_no_duplicates(
         self,
-        no_duplicates_fuzzy_dedup_data: tuple[list[str], list[FileGroupTask]],
+        no_duplicates_fuzzy_dedup_data: list[FileGroupTask],
         tmp_path: Path,
     ) -> None:
-        files, tasks = no_duplicates_fuzzy_dedup_data
+        tasks = no_duplicates_fuzzy_dedup_data
         cache_path = tmp_path / "cache"
+        output_path = tmp_path / "output"
         cache_path.mkdir(exist_ok=True)
 
         workflow = FuzzyDeduplicationWorkflow(
-            input_path=files,
             cache_path=str(cache_path),
-            output_path=None,
+            output_path=str(output_path),
             input_filetype="parquet",
             text_field="text",
             perform_removal=False,
@@ -235,8 +233,8 @@ class TestFuzzyDuplicates:
         workflow.run(initial_tasks=tasks)
 
         assert not (cache_path / "ConnectedComponentsStage").exists()
-        assert not (cache_path / DUPLICATE_IDS_SUBDIR).exists()
         assert not (cache_path / "BucketsToEdgesStage").exists()
+        assert not (output_path / DUPLICATE_IDS_SUBDIR).exists()
 
         lsh_df = cudf.read_parquet(cache_path / "LSHStage")
         assert len(lsh_df) == 0
@@ -247,6 +245,7 @@ class TestFuzzyDuplicates:
             FuzzyDeduplicationWorkflow(
                 input_path="/dummy",
                 cache_path=str(tmp_path),
+                output_path=str(tmp_path),
                 bands_per_iteration=0,
             )
 
@@ -255,6 +254,7 @@ class TestFuzzyDuplicates:
             FuzzyDeduplicationWorkflow(
                 input_path="/dummy",
                 cache_path=str(tmp_path),
+                output_path=str(tmp_path),
                 num_bands=5,
                 bands_per_iteration=10,
             )
@@ -264,6 +264,25 @@ class TestFuzzyDuplicates:
             FuzzyDeduplicationWorkflow(
                 input_path="/dummy",
                 cache_path=str(tmp_path),
+                output_path=str(tmp_path),
                 perform_removal=True,
-                output_path="/dummy_output",
             )
+
+        workflow = FuzzyDeduplicationWorkflow(
+            input_path="/dummy",
+            cache_path=str(tmp_path),
+            output_path=str(tmp_path),
+        )
+        create_id_generator_actor()
+        with pytest.raises(RuntimeError, match="An existing id generator actor was found"):
+            workflow.run()
+        kill_id_generator_actor()
+
+        workflow = FuzzyDeduplicationWorkflow(
+            cache_path=str(tmp_path),
+            output_path=str(tmp_path),
+        )
+        with pytest.raises(
+            ValueError, match="input_path to the dataset must be provided if initial_tasks are not provided"
+        ):
+            workflow.run(initial_tasks=None)
