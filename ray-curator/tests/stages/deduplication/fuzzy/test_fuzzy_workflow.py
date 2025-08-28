@@ -7,7 +7,6 @@ import pytest
 cudf = pytest.importorskip("cudf")
 import numpy as np
 import pandas as pd
-import pytest
 
 from ray_curator.stages.deduplication.fuzzy.identify_duplicates import DUPLICATE_IDS_SUBDIR
 from ray_curator.stages.deduplication.fuzzy.utils import (
