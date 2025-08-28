@@ -31,7 +31,7 @@ class IdentifyDuplicatesStage(ShuffleStage):
     """
     Stage that generates removal IDs for fuzzy deduplication.
     The approach involves shuffling the data based on the duplicate group field similar to grouping by the group field.
-    follwed by selecting one document per group.
+    followed by selecting one document per group.
     Currently the removal strategy is to randomly keep one document per group.
 
     Parameters
