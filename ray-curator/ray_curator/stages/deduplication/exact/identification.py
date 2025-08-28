@@ -44,6 +44,10 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
         Keyword arguments for cudf.read_parquet method.
     write_kwargs
         Keyword arguments for cudf.to_parquet method.
+    assign_id
+        Whether to assign a unique id to each document.
+    id_field
+        Existing id field name if not assigning a new id.
     total_nparts
         Total number of output partitions. If None, will be set automatically by the executor.
     rmm_pool_size
@@ -67,14 +71,24 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
         input_filetype: Literal["jsonl", "parquet"] = "jsonl",
         read_kwargs: dict[str, Any] | None = None,
         write_kwargs: dict[str, Any] | None = None,
+        assign_id: bool = True,
+        id_field: str | None = None,
         total_nparts: int | None = None,
         rmm_pool_size: int | Literal["auto"] | None = "auto",
         spill_memory_limit: int | Literal["auto"] | None = "auto",
         enable_statistics: bool = False,
     ):
+        if not assign_id and id_field is None:
+            msg = "id_field must be provided if assign_id is False"
+            raise ValueError(msg)
+        elif assign_id and id_field is not None:
+            msg = "id_field must be None if assign_id is True"
+            raise ValueError(msg)
         # Set instance attributes before parent initialization
         self.text_field = text_field
         self.input_filetype = input_filetype
+        self.assign_id_field = assign_id
+        self.id_field = id_field if id_field is not None else CURATOR_DEDUP_ID_STR
         self.output_fs = get_fs(
             output_path, storage_options=read_kwargs.get("storage_options") if read_kwargs is not None else None
         )
@@ -99,8 +113,8 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
         """
         if len(df) == 0:
             # return empty dataframe with id column
-            return df[[CURATOR_DEDUP_ID_STR]]
-        removal_ids = df[df[EXACT_DUPLICATE_GROUP_FIELD].duplicated(keep="first")][CURATOR_DEDUP_ID_STR]
+            return df[[self.id_field]]
+        removal_ids = df[df[EXACT_DUPLICATE_GROUP_FIELD].duplicated(keep="first")][self.id_field]
         removal_ids = removal_ids.sort_values(ignore_index=True)
         return removal_ids.to_frame()
 
@@ -113,11 +127,14 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
 
     def setup(self, _worker_metadata: "WorkerMetadata | None" = None) -> None:
         super().setup(_worker_metadata)
-        try:
-            self.id_generator = get_id_generator_actor()
-        except ValueError as e:
-            msg = "Did not find a valid ID generator actor. Please ensure that the ID generator actor was started with from ray_curator.stages.deduplication.id_generator.create_id_generator_actor()"
-            raise ValueError(msg) from e
+        if self.assign_id_field:
+            try:
+                self.id_generator = get_id_generator_actor()
+            except ValueError as e:
+                msg = "Did not find a valid ID generator actor. Please ensure that the ID generator actor was started with from ray_curator.stages.deduplication.id_generator.create_id_generator_actor()"
+                raise ValueError(msg) from e
+        else:
+            self.id_generator = None
 
     def inputs(self) -> tuple[list[str], list[str]]:
         return (["data"], [])
@@ -128,18 +145,23 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
     def read_and_insert(self, task: FileGroupTask) -> FileGroupTask:
         self._check_actor_obj()
 
-        if self.id_generator is None:
+        if self.assign_id_field and self.id_generator is None:
             msg = "ID generator not initialized. Call setup() first."
             raise RuntimeError(msg)
+        input_columns = [self.text_field] if self.assign_id_field else [self.text_field, self.id_field]
         if self.input_filetype == "jsonl":
-            df = self.read_jsonl(filepath=task.data, columns=[self.text_field], assign_id=True, **self.read_kwargs)
+            df = self.read_jsonl(
+                filepath=task.data, columns=input_columns, assign_id=self.assign_id_field, **self.read_kwargs
+            )
         elif self.input_filetype == "parquet":
-            df = self.read_parquet(filepath=task.data, columns=[self.text_field], assign_id=True, **self.read_kwargs)
+            df = self.read_parquet(
+                filepath=task.data, columns=input_columns, assign_id=self.assign_id_field, **self.read_kwargs
+            )
         else:
             msg = f"Unsupported input filetype: {self.input_filetype}"
             raise ValueError(msg)
 
-        hashed_df = df[[CURATOR_DEDUP_ID_STR]]
+        hashed_df = df[[self.id_field]]
         hashed_df[EXACT_DUPLICATE_GROUP_FIELD] = df[self.text_field].hash_values(method="md5")
         self.output_columns = list(hashed_df.columns)
         self.dataset_name = task.dataset_name

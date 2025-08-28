@@ -23,7 +23,7 @@ import ray
 
 from ray_curator.backends.experimental.ray_actor_pool import RayActorPoolExecutor
 from ray_curator.pipeline import Pipeline
-from ray_curator.stages.deduplication.exact.exact_duplicate_identification import ExactDuplicateIdentification
+from ray_curator.stages.deduplication.exact.identification import ExactDuplicateIdentification
 from ray_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR, get_id_generator_actor
 from ray_curator.tasks import FileGroupTask
 
@@ -108,8 +108,11 @@ def exact_no_dedup_data_jsonl(tmp_path: Path) -> list[FileGroupTask]:
 @pytest.mark.gpu
 @pytest.mark.usefixtures("ray_client_with_id_generator")
 class TestExactDuplicates:
+    @pytest.mark.parametrize("assign_id", [True, False])
     @pytest.mark.parametrize("total_nparts", [2, 4])
-    def test_dup(self, exact_dedup_data_parquet: list[FileGroupTask], tmpdir: Path, total_nparts: int) -> None:
+    def test_dup(
+        self, exact_dedup_data_parquet: list[FileGroupTask], tmpdir: Path, total_nparts: int, assign_id: bool
+    ) -> None:
         stage = ExactDuplicateIdentification(
             text_field="text",
             output_path=str(tmpdir),
@@ -118,14 +121,23 @@ class TestExactDuplicates:
             rmm_pool_size=None,
             spill_memory_limit="auto",
             enable_statistics=False,
+            assign_id=assign_id,
+            id_field="id" if not assign_id else None,
         )
         pipeline = Pipeline(name="test_exact_dedup", stages=[stage])
         executor = RayActorPoolExecutor()
         pipeline.run(executor, initial_tasks=exact_dedup_data_parquet)
-        original_df_with_curator_ids = get_original_df_with_curator_ids(exact_dedup_data_parquet, "parquet")
+
+        original_df_with_curator_ids = (
+            get_original_df_with_curator_ids(exact_dedup_data_parquet, "parquet") if assign_id else None
+        )
 
         removal_ids_df = cudf.read_parquet(tmpdir / stage.name)
-        removal_ids_df = removal_ids_df.merge(original_df_with_curator_ids, on=CURATOR_DEDUP_ID_STR, how="left")
+        removal_ids_df = (
+            removal_ids_df.merge(original_df_with_curator_ids, on=CURATOR_DEDUP_ID_STR, how="left")
+            if assign_id
+            else removal_ids_df
+        )
         removal_ids = set(removal_ids_df.id.to_arrow().to_pylist())
         duplicate_docs = [{1, -1}, {2, 4}]
         # For every duplicate group assert that 1 document was not removed
@@ -147,3 +159,23 @@ class TestExactDuplicates:
 
         removal_ids_df = cudf.read_parquet(tmpdir / stage.name)
         assert len(removal_ids_df) == 0
+
+    def test_bad_inputs(self, tmpdir: Path) -> None:
+        with pytest.raises(ValueError, match="id_field must be None if assign_id is True"):
+            ExactDuplicateIdentification(
+                text_field="text",
+                output_path=str(tmpdir),
+                input_filetype="parquet",
+                total_nparts=1,
+                rmm_pool_size=None,
+                spill_memory_limit="auto",
+                enable_statistics=False,
+                assign_id=True,
+                id_field="id",
+            )
+        with pytest.raises(ValueError, match="id_field must be provided if assign_id is False"):
+            ExactDuplicateIdentification(
+                text_field="text",
+                output_path=str(tmpdir),
+                assign_id=False,
+            )
