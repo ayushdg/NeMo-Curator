@@ -187,6 +187,10 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
             removal_ids = self._get_removal_ids(shuffled_partition_df)
 
             output_file = self.output_fs.sep.join([self.output_path, f"part.{partition_id}.parquet"])
+            # If user has not specified row_group_size_rows, set it to the lower of 10% of the number of removal ids or 1M (default) or a minimum of 1k (for small datasets)
+            write_kwargs["row_group_size_rows"] = write_kwargs.get(
+                "row_group_size_rows", max(1000, min(len(removal_ids) // 10, 1000 * 1000))
+            )
             removal_ids.to_parquet(output_file, **write_kwargs)
             result_tasks.append(
                 FileGroupTask(
