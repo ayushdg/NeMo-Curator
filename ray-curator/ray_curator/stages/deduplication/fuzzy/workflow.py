@@ -10,10 +10,16 @@ from ray_curator.stages.deduplication.fuzzy.connected_components import Connecte
 from ray_curator.stages.deduplication.fuzzy.identify_duplicates import IdentifyDuplicatesStage
 from ray_curator.stages.deduplication.fuzzy.lsh.stage import LSHStage
 from ray_curator.stages.deduplication.fuzzy.minhash import MinHashStage
-from ray_curator.stages.deduplication.id_generator import create_id_generator_actor, get_id_generator_actor
+from ray_curator.stages.deduplication.id_generator import (
+    create_id_generator_actor,
+    kill_id_generator_actor,
+    write_id_generator_to_disk,
+)
 from ray_curator.stages.file_partitioning import FilePartitioningStage
 from ray_curator.tasks import FileGroupTask
 from ray_curator.utils.file_utils import get_fs
+
+ID_GENERATOR_OUTPUT_FILENAME = "fuzzy_id_generator.json"
 
 
 class FuzzyDeduplicationWorkflow:
@@ -31,7 +37,7 @@ class FuzzyDeduplicationWorkflow:
         This stage converts the resulting LSH mapping of bucket ID to document ID into a graph of edges.
     - ConnectedComponentsStage
         Performs weaklyconnected components clustering on the graph represented by the edgelist.
-    - GenerateRemovalIDs
+    - IdentifyDuplicatesStage
         Generates a list of document ids to remove based on the connected components clusters/components.
     - Removal (Optional)
         Currently not implemented.
@@ -40,9 +46,9 @@ class FuzzyDeduplicationWorkflow:
     def __init__(  # noqa: PLR0913
         self,
         # I/O config
-        input_path: str | list[str],
         cache_path: str,
-        output_path: str | None = None,
+        output_path: str,
+        input_path: str | list[str] | None = None,
         input_filetype: Literal["jsonl", "parquet"] = "parquet",
         input_blocksize: str | int = "1GiB",
         input_file_extensions: list[str] | None = None,
@@ -63,13 +69,14 @@ class FuzzyDeduplicationWorkflow:
         """
         Configuration for MinHash based fuzzy duplicates detection.
         Parameters
-            input_path: str | list[str]
-            Directory or list of files containing the input dataset.
         cache_path: str
             Directory to store deduplication intermediates such as minhashes/buckets etc.
-        output_path: str | None = None
-            Directory to store the deduplicated output files.
-            Only used if `perform_removal` is True.
+        output_path: str
+            Directory to store the duplicate Ids and the id generator mapping for removal pipelines.
+            It also stores the deduplicated output files, if `perform_removal` is True.
+        input_path: str | list[str] | None
+            Directory or list of files containing the input dataset.
+            Unused if `initial_tasks` is provided during workflow run.
         input_filetype: Literal["jsonl", "parquet"]
             Format of the input dataset.
         input_blocksize: str | int
@@ -153,11 +160,6 @@ class FuzzyDeduplicationWorkflow:
         if self.bands_per_iteration < 1 or self.bands_per_iteration > self.num_bands:
             msg = "bands_per_iteration must be between [1, num_bands]"
             raise ValueError(msg)
-        if self.output_path is None and self.perform_removal:
-            msg = "output_path must be provided if perform_removal is True"
-            raise ValueError(msg)
-        if not self.perform_removal and self.output_path is not None:
-            logger.warning("output_path will be unused as perform_removal is False")
 
     def _create_minhash_pipeline(self, generate_input_filegroups: bool) -> Pipeline:
         stages = []
@@ -229,9 +231,9 @@ class FuzzyDeduplicationWorkflow:
                     write_kwargs=self.cache_kwargs,
                 ),
                 IdentifyDuplicatesStage(
-                    output_path=self.cache_path,
+                    output_path=self.output_path,
                     read_kwargs=self.read_kwargs,
-                    write_kwargs=self.cache_kwargs,
+                    write_kwargs=self.write_kwargs,
                     rmm_pool_size="auto",
                     spill_memory_limit="auto",
                 ),
@@ -239,8 +241,14 @@ class FuzzyDeduplicationWorkflow:
         )
 
     def _validate_initial_tasks(self, initial_tasks: list[FileGroupTask] | None) -> None:
-        if initial_tasks is not None and any(not isinstance(task, FileGroupTask) for task in initial_tasks):
-            msg = "All input tasks to the pipeline must be of type FileGroupTask pointing to the dataset to be deduplicated."
+        if initial_tasks is not None:
+            if any(not isinstance(task, FileGroupTask) for task in initial_tasks):
+                msg = "All input tasks to the pipeline must be of type FileGroupTask pointing to the dataset to be deduplicated."
+                raise ValueError(msg)
+            elif self.input_path is not None:
+                logger.warning("Ignoring input_path as initial_tasks are provided.")
+        elif self.input_path is None:
+            msg = "input_path to the dataset must be provided if initial_tasks are not provided manually."
             raise ValueError(msg)
 
     def run(self, initial_tasks: list[FileGroupTask] | None = None) -> None:
@@ -254,42 +262,59 @@ class FuzzyDeduplicationWorkflow:
         self._validate_initial_tasks(initial_tasks)
         executor = RayActorPoolExecutor(config=self.executor_config)
         try:
-            get_id_generator_actor()
-        except ValueError:
-            logger.info("Creating an id generator actor for the deduplication pipeline.")
             create_id_generator_actor()
+        except ValueError:
+            err_msg = """
+            An existing id generator actor was found. Please remove or save the existing id generator with
+            `ray_curator.stages.deduplication.id_generator.write_id_generator_to_disk` (if needed) and remove the actor with
+            `ray_curator.stages.deduplication.id_generator.kill_id_generator_actor` before running the fuzzy deduplication pipeline.
+            """
+            raise RuntimeError(err_msg) from None
 
-        start_time = time.time()
-        minhash_pipeline = self._create_minhash_pipeline(generate_input_filegroups=initial_tasks is None)
-        minhash_pipeline.run(executor=executor, initial_tasks=initial_tasks)
-        minhash_end_time = time.time()
-        logger.info(f"Minhash pipeline completed in {minhash_end_time - start_time} seconds")
+        try:
+            minhash_pipeline = self._create_minhash_pipeline(generate_input_filegroups=initial_tasks is None)
+            start_time = time.time()
+            minhash_pipeline.run(executor=executor, initial_tasks=initial_tasks)
+            minhash_end_time = time.time()
+            logger.info(f"Minhash pipeline completed in {minhash_end_time - start_time} seconds")
 
-        lsh_pipeline = self._create_lsh_pipeline()
-        lsh_start_time = time.time()
-        # LSH stage generates it's own input tasks from the minhash directory
-        lsh_tasks = lsh_pipeline.run(executor=executor, initial_tasks=None)
-        lsh_end_time = time.time()
-        logger.info(f"LSH pipeline completed in {lsh_end_time - lsh_start_time} seconds")
+            lsh_pipeline = self._create_lsh_pipeline()
+            lsh_start_time = time.time()
+            # LSH stage generates it's own input tasks from the minhash directory
+            lsh_tasks = lsh_pipeline.run(executor=executor, initial_tasks=None)
+            lsh_end_time = time.time()
+            logger.info(f"LSH pipeline completed in {lsh_end_time - lsh_start_time} seconds")
 
-        valid_lsh_tasks = [task for task in lsh_tasks if task._metadata.get("num_docs", 0) > 0]
-        if len(valid_lsh_tasks) == 0:
-            logger.info("No potential duplicates found in the dataset. Skipping connected components pipeline.")
-        else:
-            connected_components_pipeline = self._create_connected_components_pipeline()
-            connected_components_start_time = time.time()
-            connected_components_tasks = connected_components_pipeline.run(
-                executor=executor, initial_tasks=valid_lsh_tasks
-            )
-            connected_components_end_time = time.time()
-            logger.info(
-                f"Connected components pipeline completed in {connected_components_end_time - connected_components_start_time} seconds"
-            )
-            num_removed_documents = sum(
-                task._metadata.get("num_removal_ids", 0) for task in connected_components_tasks
-            )
-            logger.info(f"Number of documents removed: {num_removed_documents}")
-
-        end_time = time.time()
-
-        logger.info(f"Fuzzy deduplication pipeline completed in {end_time - start_time} seconds")
+            valid_lsh_tasks = [task for task in lsh_tasks if task._metadata.get("num_docs", 0) > 0]
+            if len(valid_lsh_tasks) == 0:
+                logger.info("No potential duplicates found in the dataset. Skipping connected components pipeline.")
+            else:
+                connected_components_pipeline = self._create_connected_components_pipeline()
+                connected_components_start_time = time.time()
+                connected_components_tasks = connected_components_pipeline.run(
+                    executor=executor, initial_tasks=valid_lsh_tasks
+                )
+                connected_components_end_time = time.time()
+                logger.info(
+                    f"Connected components pipeline completed in {connected_components_end_time - connected_components_start_time} seconds"
+                )
+                num_removed_documents = sum(
+                    task._metadata.get("num_removal_ids", 0) for task in connected_components_tasks
+                )
+                logger.info(f"Number of documents removed: {num_removed_documents}")
+                output_fs = get_fs(
+                    self.output_path,
+                    self.write_kwargs.get("storage_options") if self.write_kwargs is not None else None,
+                )
+                id_generator_path = output_fs.sep.join([self.output_path, ID_GENERATOR_OUTPUT_FILENAME])
+                write_id_generator_to_disk(
+                    id_generator_path,
+                    storage_options=self.write_kwargs.get("storage_options")
+                    if self.write_kwargs is not None
+                    else None,
+                )
+                logger.info(f"Id generator written to {id_generator_path}")
+            end_time = time.time()
+            logger.info(f"Fuzzy deduplication pipeline completed in {end_time - start_time} seconds")
+        finally:
+            kill_id_generator_actor()
