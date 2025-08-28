@@ -51,8 +51,8 @@ def get_original_df_with_curator_ids(
 
 @pytest.fixture
 def exact_dedup_data_parquet(tmp_path: Path) -> list[FileGroupTask]:
-    df1 = pd.DataFrame({"id": [1, 2, 300], "text": ["abc", "aba", "abb"]})
-    df2 = pd.DataFrame({"id": [4, -1], "text": ["aba", "abc"]})
+    df1 = pd.DataFrame({"id": [1, 2, 300], "text": ["Small String", "Large String", "Medium String"]})
+    df2 = pd.DataFrame({"id": [4, -1], "text": ["Large String", "Small String"]})
 
     file1 = tmp_path / "data_part1.parquet"
     file2 = tmp_path / "data_part2.parquet"
