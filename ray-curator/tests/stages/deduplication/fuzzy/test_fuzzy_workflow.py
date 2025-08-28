@@ -10,12 +10,12 @@ import pandas as pd
 import pytest
 import ray
 
-from ray_curator.stages.deduplication.fuzzy.fuzzy_deduplication import (
-    FuzzyDeduplicationWorkflow,
-)
 from ray_curator.stages.deduplication.fuzzy.identify_duplicates import DUPLICATE_IDS_SUBDIR
 from ray_curator.stages.deduplication.fuzzy.utils import (
     CURATOR_FUZZY_DUPLICATE_GROUP_FIELD,
+)
+from ray_curator.stages.deduplication.fuzzy.workflow import (
+    FuzzyDeduplicationWorkflow,
 )
 from ray_curator.stages.deduplication.id_generator import (
     CURATOR_DEDUP_ID_STR,

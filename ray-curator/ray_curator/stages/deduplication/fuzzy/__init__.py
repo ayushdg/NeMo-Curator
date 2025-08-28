@@ -1,3 +1,3 @@
-from ray_curator.stages.deduplication.fuzzy.fuzzy_deduplication import FuzzyDeduplicationWorkflow
+from ray_curator.stages.deduplication.fuzzy.workflow import FuzzyDeduplicationWorkflow
 
 __all__ = ["FuzzyDeduplicationWorkflow"]
