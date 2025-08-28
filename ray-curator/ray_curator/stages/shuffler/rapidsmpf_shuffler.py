@@ -91,6 +91,7 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):
             self.rmm_pool_size = None
         else:
             err_msg = f"Invalid rmm_pool_size: {rmm_pool_size}"
+            raise ValueError(err_msg)
         if isinstance(spill_memory_limit, int):
             self.spill_memory_limit = align_down_to_256(spill_memory_limit)
         elif spill_memory_limit == "auto":
