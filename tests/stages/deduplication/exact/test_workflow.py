@@ -21,6 +21,7 @@ import pytest
 
 cudf = pytest.importorskip("cudf")
 import numpy as np
+import pandas as pd
 
 from nemo_curator.stages.deduplication.exact.workflow import ID_GENERATOR_OUTPUT_FILENAME, ExactDeduplicationWorkflow
 from nemo_curator.stages.deduplication.id_generator import (
@@ -53,6 +54,62 @@ def get_original_df_with_curator_ids(
         dfs.append(df)
 
     return cudf.concat(dfs)
+
+
+@pytest.fixture
+def exact_dedup_data_parquet(tmp_path: Path) -> list[FileGroupTask]:
+    df1 = pd.DataFrame({"id": [1, 2, 300], "text": ["Small String", "Large String", "Medium String"]})
+    df2 = pd.DataFrame({"id": [4, -1], "text": ["Large String", "Small String"]})
+
+    file1 = tmp_path / "data_part1.parquet"
+    file2 = tmp_path / "data_part2.parquet"
+
+    df1.to_parquet(file1)
+    df2.to_parquet(file2)
+
+    return [
+        FileGroupTask(
+            task_id="exact_dedup_0",
+            dataset_name="exact_dedup_dataset",
+            data=[str(file1)],
+            _metadata={
+                "partition_index": 0,
+                "total_partitions": 2,
+                "source_files": [str(file1)],
+            },
+        ),
+        FileGroupTask(
+            task_id="exact_dedup_1",
+            dataset_name="exact_dedup_dataset",
+            data=[str(file2)],
+            _metadata={
+                "partition_index": 1,
+                "total_partitions": 2,
+                "source_files": [str(file2)],
+            },
+        ),
+    ]
+
+
+@pytest.fixture
+def exact_no_dedup_data_jsonl(tmp_path: Path) -> list[FileGroupTask]:
+    df = pd.DataFrame({"id": [1, 2, 300], "content": ["abc", "aba", "abb"]})
+
+    file1 = tmp_path / "no_dedup_data.jsonl"
+    df.to_json(file1, orient="records", lines=True)
+
+    return [
+        FileGroupTask(
+            task_id="no_dedup_0",
+            dataset_name="no_dedup_dataset",
+            data=[str(file1)],
+            _metadata={
+                "partition_index": 0,
+                "total_partitions": 1,
+                "source_files": [str(file1)],
+            },
+        ),
+    ]
 
 
 @pytest.mark.gpu
