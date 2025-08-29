@@ -25,11 +25,11 @@ import pandas as pd
 import pytest
 import ray
 
-from ray_curator.backends.experimental.ray_actor_pool import RayActorPoolExecutor
-from ray_curator.pipeline import Pipeline
-from ray_curator.stages.deduplication.exact.identification import ExactDuplicateIdentification
-from ray_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR, get_id_generator_actor
-from ray_curator.tasks import FileGroupTask
+from nemo_curator.backends.experimental.ray_actor_pool import RayActorPoolExecutor
+from nemo_curator.pipeline import Pipeline
+from nemo_curator.stages.deduplication.exact.identification import ExactDuplicateIdentification
+from nemo_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR, get_id_generator_actor
+from nemo_curator.tasks import FileGroupTask
 
 
 def get_original_df_with_curator_ids(
