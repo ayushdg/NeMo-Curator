@@ -134,7 +134,7 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
             try:
                 self.id_generator = get_id_generator_actor()
             except ValueError as e:
-                msg = "Did not find a valid ID generator actor. Please ensure that the ID generator actor was started with from ray_curator.stages.deduplication.id_generator.create_id_generator_actor()"
+                msg = "Did not find a valid ID generator actor. Please ensure that the ID generator actor was started with from nemo_curator.stages.deduplication.id_generator.create_id_generator_actor()"
                 raise ValueError(msg) from e
         else:
             self.id_generator = None
