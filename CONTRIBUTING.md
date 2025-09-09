@@ -84,7 +84,9 @@ Pull requests should cover at least 80% of its changes with tests. CI will rejec
 
 1) Make sure your PR does one thing. Have a clear answer to "What does this PR do?".
 2) Read General Principles and style guide above
-3) Make sure you sign your commits. E.g. use ``git commit -sS`` when committing.
+3) Ensure that your environment is set up for signing commits. This [GitHub doc](https://docs.github.com/en/authentication/managing-commit-signature-verification) contains all the information about setting up commit signing.
+    - [This doc](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits) has more details about how you can sign commits and has links with instructions to up keys for commit signing.
+4) Make sure you sign your commits. E.g. use ``git commit -sS`` when committing.
     1) If you forget to do this, please follow the steps below to undo the commits and reapply the changes under a new (signed and signed-off) commit. Note: This will preserve your changes, but delete the git history of commits.
     ```bash
     git reset --soft HEAD~N
