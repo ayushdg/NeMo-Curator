@@ -69,11 +69,13 @@ NODES=(${NODES})
 HEAD_NODE_NAME=${NODES[0]}
 HEAD_NODE_IP=$(srun --jobid ${JOB_ID} --nodes=1 --ntasks=1 -w "$HEAD_NODE_NAME" bash -c "hostname  --ip-address")
 
+
 RAY_GCS_ADDRESS=$HEAD_NODE_IP:$GCS_PORT
 RAY_CLIENT_ADDRESS=$HEAD_NODE_IP:$CLIENT_PORT
 export RAY_GCS_ADDRESS
 export RAY_CLIENT_ADDRESS
 export RAY_ADDRESS="ray://$RAY_CLIENT_ADDRESS"
+export XENNA_RESPECT_CUDA_VISIBLE_DEVICES="1"
 
 echo "RAY_ADDRESS: $RAY_ADDRESS"
 
@@ -135,4 +137,4 @@ srun \
   -w ${HEAD_NODE_NAME} \
   --container-image=$IMAGE \
   --container-mounts=$CONTAINER_MOUNTS \
-    bash -c "RAY_ADDRESS=$RAY_ADDRESS $RUN_COMMAND"
+    bash -c "$RUN_COMMAND"
