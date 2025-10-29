@@ -246,6 +246,7 @@ class KMeansReadFitWriteStage(ProcessingStage[FileGroupTask, _EmptyTask], Dedupl
             n_clusters=self.n_clusters,
             max_iter=self.max_iter,
             tol=self.tol,
+            random_state=self.random_state,
             verbose=self.verbose,
             n_init=self.n_init,
             oversampling_factor=self.oversampling_factor,

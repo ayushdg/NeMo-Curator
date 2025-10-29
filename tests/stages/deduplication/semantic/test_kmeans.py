@@ -114,7 +114,7 @@ def run_single_gpu_baseline(
 ) -> np.ndarray:
     single_gpu_kmeans = cuml.KMeans(
         n_clusters=n_clusters,
-        init="k-means++",
+        init="k-means||",
         max_iter=300,
         tol=1e-4,
         random_state=RANDOM_STATE,
