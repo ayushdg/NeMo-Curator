@@ -39,7 +39,8 @@ if TYPE_CHECKING:
     from rapidsmpf.shuffler import Shuffler
 
 
-class BulkRapidsMPFShuffler(BaseShufflingActor):
+# Exempt this class from coverage is it's indirectly tested by the ShuffleStage which coverage tools don't pick up.
+class BulkRapidsMPFShuffler(BaseShufflingActor):  # pragma: no cover
     """
     Class that performs a bulk shuffle operation.
     This class is compatible with Ray Actors communicating with each other using UCXX communication.
