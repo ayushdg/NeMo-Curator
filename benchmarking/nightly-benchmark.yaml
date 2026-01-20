@@ -36,10 +36,10 @@ datasets:
     formats:
     - type: "files"
       path: "{datasets_path}/mscoco/model_weights"
-  - name: "rpv1"
+  - name: "rpv2-2023-14-en"
     formats:
-    - type: parquet"
-    - path: "{datasets_path}/rpv1_consistent_schema/parquet"
+    - type: "parquet"
+      path: "{datasets_path}/rpv2_2023-14_en"
 
 default_timeout_s: 7200
 
@@ -206,19 +206,23 @@ entries:
     script: exact_dedup_identification_benchmark.py
     args: >-
       --benchmark-results-path={session_entry_dir}
-      --input-path={dataset:commoncrawl,jsonl}
-      --output-path={session_entry_dir}/output
-      --input-filetype=jsonl
-      --text-field=text
-      --input-blocksize=2GiB
-    timeout_s: 20000
+      --input-path={dataset:rpv2-2023-14-en,parquet}
+      --output-path={session_entry_dir}/scratch/output
+      --input-filetype=parquet
+      --text-field=raw_content
+      --input-blocksize=3GiB
+    timeout_s: 800
     sink_data:
       - name: slack
-        additional_metrics: ["num_duplicates_identified", "identification_time_s"]
+        additional_metrics:
+          - "num_duplicates_identified"
     ray:
       num_cpus: 64
       num_gpus: 4
       enable_object_spilling: false
+    requirements:
+      - metric: num_duplicates
+        exact_value: 64292856
 
   - name: dedup_removal_raydata
     enabled: true
