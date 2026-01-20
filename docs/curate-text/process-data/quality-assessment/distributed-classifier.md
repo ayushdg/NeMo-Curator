@@ -43,10 +43,10 @@ NVIDIA NeMo Curator provides a base class `DistributedDataClassifier` that can b
 | MultilingualDomainClassifier | Categorize text in 52 languages by domain | [nvidia/multilingual-domain-classifier](https://huggingface.co/nvidia/multilingual-domain-classifier) | `filter_by`, `text_field` | None |
 | QualityClassifier | Assess document quality | [nvidia/quality-classifier-deberta](https://huggingface.co/nvidia/quality-classifier-deberta) | `filter_by`, `text_field` | None |
 | AegisClassifier | Detect unsafe content | [nvidia/Aegis-AI-Content-Safety-LlamaGuard-Defensive-1.0](https://huggingface.co/nvidia/Aegis-AI-Content-Safety-LlamaGuard-Defensive-1.0) | `aegis_variant`, `filter_by` | HuggingFace token |
-| InstructionDataGuardClassifier | Detect poisoning attacks | [nvidia/instruction-data-guard](https://huggingface.co/nvidia/instruction-data-guard) | `text_field`, `pred_column` | HuggingFace token |
-| FineWebEduClassifier | Score educational value | [HuggingFaceFW/fineweb-edu-classifier](https://huggingface.co/HuggingFaceFW/fineweb-edu-classifier) | `pred_column`, `int_column` | None |
-| FineWebMixtralEduClassifier | Score educational value (Mixtral annotations) | [nvidia/nemocurator-fineweb-mixtral-edu-classifier](https://huggingface.co/nvidia/nemocurator-fineweb-mixtral-edu-classifier) | `pred_column`, `int_column`, `batch_size=1024` | None |
-| FineWebNemotronEduClassifier | Score educational value (Nemotron annotations) | [nvidia/nemocurator-fineweb-nemotron-4-edu-classifier](https://huggingface.co/nvidia/nemocurator-fineweb-nemotron-4-edu-classifier) | `pred_column`, `int_column`, `batch_size=1024` | None |
+| InstructionDataGuardClassifier | Detect poisoning attacks | [nvidia/instruction-data-guard](https://huggingface.co/nvidia/instruction-data-guard) | `text_field`, `label_field` | HuggingFace token |
+| FineWebEduClassifier | Score educational value | [HuggingFaceFW/fineweb-edu-classifier](https://huggingface.co/HuggingFaceFW/fineweb-edu-classifier) | `label_field`, `int_field` | None |
+| FineWebMixtralEduClassifier | Score educational value (Mixtral annotations) | [nvidia/nemocurator-fineweb-mixtral-edu-classifier](https://huggingface.co/nvidia/nemocurator-fineweb-mixtral-edu-classifier) | `label_field`, `int_field`, `model_inference_batch_size=1024` | None |
+| FineWebNemotronEduClassifier | Score educational value (Nemotron annotations) | [nvidia/nemocurator-fineweb-nemotron-4-edu-classifier](https://huggingface.co/nvidia/nemocurator-fineweb-nemotron-4-edu-classifier) | `label_field`, `int_field`, `model_inference_batch_size=1024` | None |
 | ContentTypeClassifier | Categorize by speech type | [nvidia/content-type-classifier-deberta](https://huggingface.co/nvidia/content-type-classifier-deberta) | `filter_by`, `text_field` | None |
 | PromptTaskComplexityClassifier | Classify prompt tasks and complexity | [nvidia/prompt-task-and-complexity-classifier](https://huggingface.co/nvidia/prompt-task-and-complexity-classifier) | `text_field` | None |
 
@@ -122,7 +122,7 @@ results = pipeline.run()  # Uses XennaExecutor by default
 The exact label categories returned by the Quality Classifier depend on the model configuration. Check the prediction column in your results to see the available labels for filtering with the `filter_by` parameter.
 :::
 
-### AEGIS Safety Model
+### AEGIS Safety Classifier
 
 The AEGIS classifier detects unsafe content across 13 critical risk categories. It requires a HuggingFace token for access to Llama Guard.
 
@@ -165,8 +165,8 @@ The classifier adds a column with labels: "safe," "O1" through "O13" (each repre
 safety_classifier = AegisClassifier(
     aegis_variant="nvidia/Aegis-AI-Content-Safety-LlamaGuard-Defensive-1.0",
     hf_token=token,
-    keep_raw_pred=True,
-    raw_pred_column="raw_predictions"
+    keep_raw_output=True,
+    raw_output_field="raw_predictions"
 )
 ```
 
@@ -239,9 +239,9 @@ pipeline.add_stage(reader)
 # Apply the FineWeb Edu classifier
 edu_classifier = FineWebEduClassifier(
     model_inference_batch_size=256,
-    float_score_column="fineweb-edu-score-float",  # Raw float scores
-    int_score_column="fineweb-edu-score-int",      # Rounded integer scores
-    pred_column="fineweb-edu-score-label"          # Quality labels
+    float_score_field="fineweb-edu-score-float",  # Raw float scores
+    int_score_field="fineweb-edu-score-int",      # Rounded integer scores
+    label_field="fineweb-edu-score-label"         # Quality labels
 )
 pipeline.add_stage(edu_classifier)
 
@@ -287,9 +287,9 @@ pipeline.add_stage(reader)
 
 # Apply the FineWeb Mixtral Edu classifier
 classifier = FineWebMixtralEduClassifier(
-    float_score_column="fineweb-mixtral-edu-score-float",  # Raw float scores
-    int_score_column="fineweb-mixtral-edu-score-int",      # Rounded integer scores
-    pred_column="fineweb-mixtral-edu-score-label"          # "high_quality" or "low_quality"
+    float_score_field="fineweb-mixtral-edu-score-float",  # Raw float scores
+    int_score_field="fineweb-mixtral-edu-score-int",      # Rounded integer scores
+    label_field="fineweb-mixtral-edu-score-label"          # "high_quality" or "low_quality"
 )
 pipeline.add_stage(classifier)
 
@@ -365,28 +365,6 @@ pipeline.add_stage(writer)
 results = pipeline.run()  # Uses XennaExecutor by default
 ```
 
-## Scaling with Different Executors
-
-All NVIDIA NeMo Curator classifiers support different execution backends for enhanced scalability and performance. By default, pipelines use the `XennaExecutor`, but you can choose different backends based on your computational requirements.
-
-```python
-from nemo_curator.backends.xenna import XennaExecutor
-from nemo_curator.pipeline import Pipeline
-from nemo_curator.stages.text.classifiers import QualityClassifier
-
-# Create pipeline with classifier
-pipeline = Pipeline(name="classifier_pipeline")
-pipeline.add_stage(read_stage)
-pipeline.add_stage(QualityClassifier())
-pipeline.add_stage(write_stage)
-
-# Run with default Xenna executor (recommended)
-executor = XennaExecutor(config={"execution_mode": "streaming"})
-results = pipeline.run(executor)
-```
-
-For large-scale distributed classification tasks, consider using Ray-based executors or other backends. Refer to the {doc}`Pipeline Execution Backends </reference/infrastructure/execution-backends>` reference for detailed information about available executors, their configurations, and when to use each backend type.
-
 ## Performance Optimization
 
 NVIDIA NeMo Curator's distributed classifiers are optimized for high-throughput processing through several key features:
@@ -398,12 +376,3 @@ The classifiers optimize throughput through:
 - **Length-based sorting**: Input sequences are sorted by length when `sort_by_length=True` (default)
 - **Efficient batching**: Similar-length sequences are grouped together to minimize padding overhead
 - **GPU memory optimization**: Batches are sized to maximize GPU utilization based on available memory
-
-### Integration with RAPIDS AI Ecosystem
-
-NeMo Curator leverages components from the RAPIDS AI ecosystem for accelerated processing:
-
-- **GPU-accelerated tokenization**: Fast text preprocessing on GPU when available
-- **Optimized memory management**: Smart allocation and deallocation of GPU resources
-
-For more information about RAPIDS AI performance optimization libraries, see the [rapidsai/crossfit](https://github.com/rapidsai/crossfit) repository.
