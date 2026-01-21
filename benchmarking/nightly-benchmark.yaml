@@ -39,7 +39,7 @@ datasets:
   - name: "commoncrawl_embeddings"
     formats:
     - type: "parquet"
-      path: "{datasets_path}/commoncrawl/embeddings"
+      path: "{datasets_path}/cleaned_exact_dedup_all_cc_gemma_embeddings"
 
 default_timeout_s: 7200
 
@@ -209,14 +209,14 @@ entries:
       --input-path={dataset:commoncrawl_embeddings,parquet}
       --cache-path={session_entry_dir}/scratch/cache
       --output-path={session_entry_dir}/scratch/output
-      --n-clusters=1000
-      --id-field=id
+      --n-clusters=5000
+      --id-field=_curator_dedup_id
       --embedding-field=embeddings
       --input-filetype=parquet
       --eps=0.01
       --which-to-keep=hard
       --pairwise-batch-size=1024
-    timeout_s: 1200
+    timeout_s: 7200
     sink_data:
       - name: slack
         additional_metrics:
@@ -226,7 +226,7 @@ entries:
           - workflow_total_time
     ray:
       num_cpus: 64
-      num_gpus: 4
+      num_gpus: 8
       enable_object_spilling: false
     requirements:
       - metric: num_duplicates
