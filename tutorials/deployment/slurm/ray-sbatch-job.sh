@@ -16,7 +16,7 @@
 
 
 # USAGE: sbatch --{optional-flags} ray-sbatch-job.sh
-# EXAMPLE: RUN_SCRIPT="python curation_script.py" sbatch --time=00:30:00 --nodes=2 ray-sbatch-job.sh
+# EXAMPLE: RUN_COMMAND="python curation_script.py" sbatch --time=00:30:00 --nodes=2 ray-sbatch-job.sh
 
 ########################################################
 # SLURM Directives
@@ -33,7 +33,7 @@
 # #SBATCH --time=02:00:00
 # #SBATCH --account=my_account
 # #SBATCH --partition=my_partition
-# #SBATCh --gpus-per-node=8
+# #SBATCH --gpus-per-node=8
 # #SBATCH --dependency=singleton
 
 
