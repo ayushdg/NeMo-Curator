@@ -36,6 +36,10 @@ datasets:
     formats:
     - type: "files"
       path: "{datasets_path}/mscoco/model_weights"
+  - name: "commoncrawl_embeddings"
+    formats:
+    - type: "parquet"
+      path: "{datasets_path}/commoncrawl/embeddings"
 
 default_timeout_s: 7200
 
@@ -196,6 +200,38 @@ entries:
         # 59,226,133 is expected, ensure +/- 1%
         min_value: 58633871
         max_value: 59818394
+
+  - name: semdedup_identification
+    enabled: true
+    script: semdedup_identification_benchmark.py
+    args: >-
+      --benchmark-results-path={session_entry_dir}
+      --input-path={dataset:commoncrawl_embeddings,parquet}
+      --cache-path={session_entry_dir}/scratch/cache
+      --output-path={session_entry_dir}/scratch/output
+      --n-clusters=1000
+      --id-field=id
+      --embedding-field=embeddings
+      --input-filetype=parquet
+      --eps=0.01
+      --which-to-keep=hard
+      --pairwise-batch-size=1024
+    timeout_s: 1200
+    sink_data:
+      - name: slack
+        additional_metrics:
+          - num_duplicates
+          - kmeans_percent_time
+          - pairwise_percent_time
+          - workflow_total_time
+    ray:
+      num_cpus: 64
+      num_gpus: 4
+      enable_object_spilling: false
+    requirements:
+      - metric: num_duplicates
+        # Update with expected value once baseline is established
+        min_value: 0
 
   - name: dedup_removal_raydata
     enabled: true
