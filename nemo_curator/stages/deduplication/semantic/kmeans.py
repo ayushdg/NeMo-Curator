@@ -153,7 +153,7 @@ class KMeansReadFitWriteStage(ProcessingStage[FileGroupTask, _EmptyTask], Dedupl
         t0 = time.perf_counter()
         all_dfs, embeddings_arrays = [], []
 
-        for i,group in enumerate(groups):
+        for group in groups:
             # Read all files in this group
             if self.filetype == "parquet":
                 df = self.read_parquet(
@@ -186,7 +186,7 @@ class KMeansReadFitWriteStage(ProcessingStage[FileGroupTask, _EmptyTask], Dedupl
             embeddings_arrays.append(embeddings_array)
 
         t1 = time.perf_counter()
-        self._log_metrics({"kmeans_read_time": t1 - t0, "num_rows" : sum(len(df) for df in all_dfs)})
+        self._log_metrics({"kmeans_read_time": t1 - t0, "num_rows": sum(len(df) for df in all_dfs)})
         logger.debug(f"Read time: {(t1 - t0):.2f} seconds")
         # Fit the model cooperatively across actors, then predict on local data
         concatenated_embeddings = cp.concatenate(embeddings_arrays, axis=0)

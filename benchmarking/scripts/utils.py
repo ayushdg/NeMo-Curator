@@ -34,7 +34,12 @@ def setup_executor(executor_name: str) -> RayDataExecutor | XennaExecutor | RayA
     return executor
 
 
-def load_dataset_files(dataset_path: Path, dataset_size_gb: float | None = None, dataset_ratio : float | None = None, keep_extensions: str = "parquet") -> list[str]:
+def load_dataset_files(
+    dataset_path: Path,
+    dataset_size_gb: float | None = None,
+    dataset_ratio: float | None = None,
+    keep_extensions: str = "parquet",
+) -> list[str]:
     """Load the dataset files at the given path and return a subset of the files whose combined size is approximately the given size in GB."""
     input_files = get_all_file_paths_and_size_under(
         dataset_path, recurse_subdirectories=True, keep_extensions=keep_extensions

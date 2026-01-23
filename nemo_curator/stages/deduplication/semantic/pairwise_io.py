@@ -75,6 +75,7 @@ class ClusterWiseFilePartitioningStage(ProcessingStage[_EmptyTask, FileGroupTask
         return {
             "num_workers_per_node": 1,
         }
+
     def process(self, _: _EmptyTask) -> list[FileGroupTask]:
         """Process the EmptyTask to create PairwiseFileGroupTasks.
 

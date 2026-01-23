@@ -33,6 +33,7 @@ from utils import load_dataset_files, setup_executor, write_benchmark_results
 from nemo_curator.stages.deduplication.semantic.workflow import SemanticDeduplicationWorkflow
 from nemo_curator.tasks.utils import TaskPerfUtils
 
+
 def run_semdedup_identification_benchmark(  # noqa: PLR0913
     input_path: str,
     cache_path: str,
@@ -153,7 +154,9 @@ def main() -> int:
     parser.add_argument("--benchmark-results-path", required=True, help="Path to benchmark results")
     parser.add_argument("--input-path", required=True, help="Path to input data with pre-generated embeddings")
     parser.add_argument("--dataset-size-ratio", type=float, default=1, help="Ratio of dataset to process")
-    parser.add_argument("--executor", default="xenna", choices=["xenna", "ray_data"], help="Executor to use for pairwise")
+    parser.add_argument(
+        "--executor", default="xenna", choices=["xenna", "ray_data"], help="Executor to use for pairwise"
+    )
     parser.add_argument("--cache-path", required=True, help="Path to cache directory")
     parser.add_argument("--output-path", required=True, help="Output directory for results")
     parser.add_argument("--n-clusters", type=int, default=1000, help="Number of clusters for K-means")
