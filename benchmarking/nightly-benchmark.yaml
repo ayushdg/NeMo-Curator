@@ -7,7 +7,7 @@
 # (e.g. {datasets_path}/my/test/dataset.parquet) and will be resolved to the
 # appropriate path at runtime.
 results_path: /path/where/results/are/stored
-datasets_path: /path/to/datasets
+datasets_path: /raid/prospector-lm/
 
 datasets:
   - name: "tinystories"
@@ -190,7 +190,6 @@ entries:
           - minhash_percent_time
           - lsh_percent_time
           - connected_components_percent_time
-          - workflow_total_time
     ray:
       num_cpus: 64
       num_gpus: 4
@@ -201,37 +200,46 @@ entries:
         min_value: 58633871
         max_value: 59818394
 
-  - name: semdedup_identification
+  - name: semdedup_identification_xenna
     enabled: true
     script: semdedup_identification_benchmark.py
     args: >-
       --benchmark-results-path={session_entry_dir}
-      --input-path={dataset:commoncrawl_embeddings,parquet}
+      --input-path={dataset:commoncrawl,parquet_embeddings}
       --cache-path={session_entry_dir}/scratch/cache
       --output-path={session_entry_dir}/scratch/output
-      --n-clusters=5000
+      --executor=xenna
+      --n-clusters=1000
       --id-field=_curator_dedup_id
       --embedding-field=embeddings
+      --embedding-dim=1536
       --input-filetype=parquet
       --eps=0.01
       --which-to-keep=hard
       --pairwise-batch-size=1024
-    timeout_s: 7200
+      --dataset-size-ratio=0.10
+    timeout_s: 450
     sink_data:
       - name: slack
         additional_metrics:
+          - num_documents_processed
           - num_duplicates
-          - kmeans_percent_time
+          # %percent time taken
+          - kmeans_read_percent_time
+          - kmeans_write_percent_time
+          - kmeans_fit_predict_percent_time
           - pairwise_percent_time
-          - workflow_total_time
     ray:
       num_cpus: 64
-      num_gpus: 8
+      num_gpus: 4
       enable_object_spilling: false
     requirements:
+      - metric: num_documents_processed
+        exact_value: 312458951
       - metric: num_duplicates
-        # Update with expected value once baseline is established
-        min_value: 0
+        # 494,297 is expected, ensure +/- 1%
+        min_value: 489354
+        max_value: 499240
 
   - name: dedup_removal_raydata
     enabled: true

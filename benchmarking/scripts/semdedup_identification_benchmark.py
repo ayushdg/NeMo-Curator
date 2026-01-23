@@ -28,15 +28,17 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
-from utils import write_benchmark_results
+from utils import load_dataset_files, setup_executor, write_benchmark_results
 
 from nemo_curator.stages.deduplication.semantic.workflow import SemanticDeduplicationWorkflow
-
+from nemo_curator.tasks.utils import TaskPerfUtils
 
 def run_semdedup_identification_benchmark(  # noqa: PLR0913
     input_path: str,
     cache_path: str,
     output_path: str,
+    executor: str = "xenna",
+    dataset_size_ratio: float = 1,
     n_clusters: int = 1000,
     id_field: str = "id",
     embedding_field: str = "embeddings",
@@ -53,6 +55,8 @@ def run_semdedup_identification_benchmark(  # noqa: PLR0913
         input_path: Path to input data containing pre-generated embeddings
         cache_path: Path to cache directory for intermediate results (kmeans, pairwise)
         output_path: Output directory for duplicate identification results
+        dataset_size_ratio: Ratio of dataset to process
+        executor: Executor to use for pairwise
         n_clusters: Number of clusters for K-means clustering
         id_field: Name of the ID field in the data
         embedding_field: Name of the embedding field in the data
@@ -75,7 +79,7 @@ def run_semdedup_identification_benchmark(  # noqa: PLR0913
 
     # Create and run workflow
     workflow = SemanticDeduplicationWorkflow(
-        input_path=input_path,
+        input_path=load_dataset_files(input_path, dataset_ratio=dataset_size_ratio),
         output_path=output_path,
         cache_path=cache_path,
         n_clusters=n_clusters,
@@ -89,9 +93,11 @@ def run_semdedup_identification_benchmark(  # noqa: PLR0913
     )
 
     # Run the workflow, extract metrics from the WorkflowRunResult object
-    workflow_run_result = workflow.run()
+    executor_obj = setup_executor(executor)
+    workflow_run_result = workflow.run(pairwise_executor=executor_obj)
 
     run_time_taken = time.perf_counter() - run_start_time
+    task_metrics = TaskPerfUtils.aggregate_task_metrics(workflow_run_result)
 
     # Extract metrics from workflow result
     workflow_total_time = workflow_run_result.metadata.get("total_time")
@@ -100,13 +106,22 @@ def run_semdedup_identification_benchmark(  # noqa: PLR0913
     num_duplicates = workflow_run_result.metadata.get("num_duplicates")
 
     # Calculate percentage times
-    kmeans_percent_time = None
     pairwise_percent_time = None
     if workflow_total_time:
-        if kmeans_time is not None:
-            kmeans_percent_time = round((kmeans_time / workflow_total_time) * 100, 2)
-        if pairwise_time is not None:
-            pairwise_percent_time = round((pairwise_time / workflow_total_time) * 100, 2)
+        # we get read / fit / write time from task_metrics
+        kmeans_read_time = task_metrics.get("kmeans_KMeansStage_custom.kmeans_read_time_mean", 0)
+        kmeans_write_time = task_metrics.get("kmeans_KMeansStage_custom.kmeans_write_time_mean", 0)
+        kmeans_fit_predict_time = task_metrics.get("kmeans_KMeansStage_custom.kmeans_fit_predict_time_mean", 0)
+        # this is different than kmeans_time because kmeans_time also includes setting up actors
+        # while this is just sum of mean time taken across actors across the three steps
+        _kmeans_time_taken = kmeans_read_time + kmeans_write_time + kmeans_fit_predict_time
+
+        kmeans_read_percent_time = round((kmeans_read_time / _kmeans_time_taken) * 100, 2)
+        kmeans_write_percent_time = round((kmeans_write_time / _kmeans_time_taken) * 100, 2)
+        kmeans_fit_predict_percent_time = round((kmeans_fit_predict_time / _kmeans_time_taken) * 100, 2)
+
+        kmeans_percent_time = round((kmeans_time / workflow_total_time) * 100, 2)
+        pairwise_percent_time = round((pairwise_time / workflow_total_time) * 100, 2)
 
     logger.success(f"Benchmark completed in {run_time_taken:.2f}s")
 
@@ -117,11 +132,15 @@ def run_semdedup_identification_benchmark(  # noqa: PLR0913
             "workflow_total_time": workflow_total_time,
             "kmeans_time": kmeans_time,
             "pairwise_time": pairwise_time,
+            "num_documents_processed": int(task_metrics.get("kmeans_KMeansStage_custom.num_rows_sum", 0)),
             "num_duplicates": num_duplicates,
+            # within kmeans time
+            "kmeans_read_percent_time": kmeans_read_percent_time,
+            "kmeans_write_percent_time": kmeans_write_percent_time,
+            "kmeans_fit_predict_percent_time": kmeans_fit_predict_percent_time,
+            # between workflows
             "kmeans_percent_time": kmeans_percent_time,
             "pairwise_percent_time": pairwise_percent_time,
-            "n_clusters": n_clusters,
-            "eps": eps,
         },
         "tasks": workflow_run_result,
     }
@@ -133,6 +152,8 @@ def main() -> int:
     )
     parser.add_argument("--benchmark-results-path", required=True, help="Path to benchmark results")
     parser.add_argument("--input-path", required=True, help="Path to input data with pre-generated embeddings")
+    parser.add_argument("--dataset-size-ratio", type=float, default=1, help="Ratio of dataset to process")
+    parser.add_argument("--executor", default="xenna", choices=["xenna", "ray_data"], help="Executor to use for pairwise")
     parser.add_argument("--cache-path", required=True, help="Path to cache directory")
     parser.add_argument("--output-path", required=True, help="Output directory for results")
     parser.add_argument("--n-clusters", type=int, default=1000, help="Number of clusters for K-means")
