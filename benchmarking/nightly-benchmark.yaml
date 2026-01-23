@@ -7,7 +7,7 @@
 # (e.g. {datasets_path}/my/test/dataset.parquet) and will be resolved to the
 # appropriate path at runtime.
 results_path: /path/where/results/are/stored
-datasets_path: /raid/prospector-lm/
+datasets_path: /path/to/datasets
 
 datasets:
   - name: "tinystories"
