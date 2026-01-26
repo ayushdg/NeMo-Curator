@@ -72,6 +72,10 @@ def run_exact_duplicate_identification_benchmark(  # noqa: PLR0913
     except Exception as e:  # noqa: BLE001
         logger.error(f"Benchmark failed: {e}")
         success = False
+        run_time_taken = time.perf_counter() - run_start_time
+        num_duplicates = 0
+        identification_time = 0.0
+        input_filegroups_time = 0.0
 
     return {
         "params": {
