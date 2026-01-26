@@ -60,11 +60,6 @@ def run_exact_duplicate_identification_benchmark(  # noqa: PLR0913
         workflow_result = workflow.run(initial_tasks=None)
         run_time_taken = time.perf_counter() - run_start_time
 
-        # Extract tasks from workflow result
-        output_tasks = []
-        for pipeline_name in workflow_result.pipeline_tasks:
-            output_tasks.extend(workflow_result.pipeline_tasks[pipeline_name])
-
         # Extract metrics from workflow result metadata
         num_duplicates = workflow_result.metadata.get("num_duplicates", 0)
         identification_time = workflow_result.metadata.get("identification_time", 0.0)
@@ -76,11 +71,6 @@ def run_exact_duplicate_identification_benchmark(  # noqa: PLR0913
 
     except Exception as e:  # noqa: BLE001
         logger.error(f"Benchmark failed: {e}")
-        output_tasks = []
-        run_time_taken = time.perf_counter() - run_start_time
-        num_duplicates = 0
-        identification_time = 0.0
-        input_filegroups_time = 0.0
         success = False
 
     return {
@@ -96,12 +86,11 @@ def run_exact_duplicate_identification_benchmark(  # noqa: PLR0913
         "metrics": {
             "is_success": success,
             "time_taken_s": run_time_taken,
-            "num_output_tasks": len(output_tasks),
-            "num_duplicates_identified": num_duplicates,
+            "num_duplicates": num_duplicates,
             "identification_time_s": identification_time,
             "input_filegroups_time_s": input_filegroups_time,
         },
-        "tasks": output_tasks,
+        "tasks": workflow_result,
     }
 
 

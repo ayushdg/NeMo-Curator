@@ -215,11 +215,11 @@ entries:
       --input-filetype=parquet
       --text-field=raw_content
       --input-blocksize=3GiB
-    timeout_s: 800
+    timeout_s: 500
     sink_data:
       - name: slack
         additional_metrics:
-          - "num_duplicates_identified"
+          - "num_duplicates"
     ray:
       num_cpus: 64
       num_gpus: 4
