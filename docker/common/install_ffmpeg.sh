@@ -69,7 +69,6 @@ tar xjvf /tmp/ffmpeg-snapshot.tar.bz2 -C /tmp/
 cd /tmp/ffmpeg-${FFMPEG_VERSION}
 PATH="/usr/local/cuda/bin:$PATH" ./configure \
     --prefix=/usr/local \
-    --enable-nonfree \
     --enable-cuda-nvcc \
     --enable-libnpp \
     --enable-libopenh264 \
