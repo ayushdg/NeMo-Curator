@@ -183,23 +183,61 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
         return read_func(filepaths, columns=input_columns, assign_id=self.assign_id_field, **self.read_kwargs)
 
     def read_and_insert_batch(self, tasks: list[FileGroupTask]) -> list[FileGroupTask]:
+        """Batch process multiple file group tasks for exact deduplication.
+
+        This method reads all files from all tasks, concatenates them (if needed),
+        hashes the text field using MD5, and inserts into the shuffle actor for
+        deduplication. Processing tasks in batches significantly improves
+        throughput by reducing actor call overhead and enabling more efficient
+        GPU operations.
+
+        Parameters
+        ----------
+        tasks
+            List of FileGroupTask objects containing files to process.
+            Must contain at least one task.
+
+        Returns
+        -------
+        list[FileGroupTask]
+            The input tasks unchanged. The actual deduplication results are
+            written through the shuffle actor as a side effect.
+
+        Raises
+        ------
+        RuntimeError
+            If ID generator is not initialized when assign_id is True.
+        """
         if self.assign_id_field and self.id_generator is None:
             msg = "ID generator not initialized. Call setup() first."
             raise RuntimeError(msg)
-        dfs = [self._read_files(task.data) for task in tasks]
-        df = cudf.concat(dfs, ignore_index=True)
-        self.dataset_name = tasks[0].dataset_name
+
+        # Optimize for single-task batch to avoid unnecessary concat overhead
+        if len(tasks) == 1:
+            df = self._read_files(tasks[0].data)
+            self.dataset_name = tasks[0].dataset_name
+        else:
+            dfs = [self._read_files(task.data) for task in tasks]
+            df = cudf.concat(dfs, ignore_index=True)
+            self.dataset_name = tasks[0].dataset_name
+
         self._hash_and_insert(df)
         return tasks
 
     def read_and_insert(self, task: FileGroupTask) -> FileGroupTask:
-        if self.assign_id_field and self.id_generator is None:
-            msg = "ID generator not initialized. Call setup() first."
-            raise RuntimeError(msg)
-        df = self._read_files(task.data)
-        self.dataset_name = task.dataset_name
-        self._hash_and_insert(df)
-        return task
+        """Single task processing is not supported.
+
+        This stage requires batch processing via read_and_insert_batch for
+        optimal performance. The shuffle adapter will automatically route
+        tasks to the batch method.
+
+        Raises
+        ------
+        NotImplementedError
+            Always raised as this stage only supports batch processing.
+        """
+        msg = "ExactDuplicateIdentification only supports batch processing via read_and_insert_batch"
+        raise NotImplementedError(msg)
 
     def insert_finished(self) -> None:
         super().insert_finished()
