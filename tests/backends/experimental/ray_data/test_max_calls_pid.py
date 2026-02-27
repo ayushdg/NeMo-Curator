@@ -36,10 +36,8 @@ from tests.conftest import build_ray_command
 def single_cpu_ray_cluster():
     """Start an isolated 1-CPU Ray cluster for deterministic PID testing.
 
-    Uses a standalone Ray cluster (like conftest) instead of an embedded one,
-    so the executor's ray.init/ray.shutdown cycle reconnects to this cluster
-    rather than the session-scoped conftest cluster.
-
+    Uses a standalone Ray cluster instead of the session-scoped conftest cluster
+    to ensure a single-CPU cluster for testing.
     Uses tempfile.mkdtemp for a short path to avoid hitting the Unix socket
     path length limit (108 chars) that pytest's tmp_path_factory can exceed.
     """

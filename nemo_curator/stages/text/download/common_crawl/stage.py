@@ -78,7 +78,7 @@ class CommonCrawlDownloadExtractStage(DocumentDownloadExtractStage):
         if extractor_max_calls_per_worker is None and isinstance(self.extractor.algorithm, JusTextExtractor):
             extractor_max_calls_per_worker = 2
             logger.info(
-                "justext extraction can cause memory fragmentation and lead to OOM errors."
+                "jusText extraction can cause memory fragmentation and lead to OOM errors. "
                 "Setting extractor_max_calls_per_worker=2 for the iterate-extract stage. "
                 "Pass extractor_max_calls_per_worker explicitly to override."
             )

@@ -529,18 +529,11 @@ class TestDocumentIterateExtractStage:
 
         assert stage.ray_stage_spec() == {}
 
-    def test_ray_stage_spec_with_max_calls(self) -> None:
+    @pytest.mark.parametrize("max_calls", [1, 5])
+    def test_ray_stage_spec_with_max_calls(self, max_calls: int) -> None:
         """Test that ray_stage_spec returns max_calls_per_worker when set."""
         iterator = MockDocumentIterator()
-        stage = DocumentIterateExtractStage(iterator=iterator, max_calls_per_worker=1)
+        stage = DocumentIterateExtractStage(iterator=iterator, max_calls_per_worker=max_calls)
 
         spec = stage.ray_stage_spec()
-        assert spec[RayStageSpecKeys.MAX_CALLS_PER_WORKER] == 1
-
-    def test_ray_stage_spec_with_max_calls_higher_value(self) -> None:
-        """Test that ray_stage_spec passes through arbitrary max_calls values."""
-        iterator = MockDocumentIterator()
-        stage = DocumentIterateExtractStage(iterator=iterator, max_calls_per_worker=5)
-
-        spec = stage.ray_stage_spec()
-        assert spec[RayStageSpecKeys.MAX_CALLS_PER_WORKER] == 5
+        assert spec[RayStageSpecKeys.MAX_CALLS_PER_WORKER] == max_calls
