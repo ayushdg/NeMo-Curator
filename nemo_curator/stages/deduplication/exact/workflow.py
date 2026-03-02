@@ -166,7 +166,7 @@ class ExactDeduplicationWorkflow(WorkflowBase):
                     assign_id=self.assign_id,
                     id_field=self.id_field,
                     # Matches previous implementation to write out to 1/3 the number of input tasks
-                    total_nparts=max(1, num_input_tasks // 3) if self.total_nparts is None else self.total_nparts,
+                    total_nparts=max(1, num_input_tasks // 3) if self.total_nparts is None else max(1, self.total_nparts),
                     rmm_pool_size=self.rmm_pool_size,
                     spill_memory_limit=self.spill_memory_limit,
                 ),
