@@ -52,7 +52,8 @@ class ExactDeduplicationWorkflow(WorkflowBase):
         output_path: str,
         input_path: str | list[str] | None = None,
         input_filetype: Literal["jsonl", "parquet"] = "parquet",
-        input_blocksize: str | int = "2GiB",
+        input_blocksize: str | int = "512MiB",
+        identification_batchsize: str | int = 1,
         input_file_extensions: list[str] | None = None,
         read_kwargs: dict[str, Any] | None = None,
         write_kwargs: dict[str, Any] | None = None,
@@ -82,6 +83,12 @@ class ExactDeduplicationWorkflow(WorkflowBase):
             If an integer is provided, it will be interpreted as bytes.
             If a string is provided, it will be interpreted as a size with a unit.
             If not provided, the default blocksize of 1GiB will be used.
+        identification_batchsize: str | int = "auto"
+            Size of the batch size for identification.
+            If "auto", the batch size will target 3GB batches based on the input blocksize.
+            For example: A input_blocksize of 256MiB and identification_batchsize of "auto" will result in a batch size of 12.
+            If an integer is provided, it will be interpreted as number of batches to process in a single call.
+            For example: A input_blocksize of 256MiB and identification_batchsize of 4 will result in ~1GB of data processed in a single call.
         input_file_extensions: list[str] | None
             File extensions of the input dataset.
             If not provided, the default extensions for the input_filetype will be used.
@@ -117,6 +124,7 @@ class ExactDeduplicationWorkflow(WorkflowBase):
         self.output_path = output_path
         self.input_filetype = input_filetype
         self.input_blocksize = input_blocksize
+        self.identification_batchsize = identification_batchsize
         self.input_file_extensions = input_file_extensions
         self.read_kwargs = read_kwargs
         self.write_kwargs = write_kwargs
@@ -166,10 +174,12 @@ class ExactDeduplicationWorkflow(WorkflowBase):
                     assign_id=self.assign_id,
                     id_field=self.id_field,
                     # Matches previous implementation to write out to 1/3 the number of input tasks
-                    total_nparts=max(1, num_input_tasks // 3) if self.total_nparts is None else max(1, self.total_nparts),
+                    total_nparts=max(1, num_input_tasks // 3)
+                    if self.total_nparts is None
+                    else max(1, self.total_nparts),
                     rmm_pool_size=self.rmm_pool_size,
                     spill_memory_limit=self.spill_memory_limit,
-                ),
+                ).with_(batch_size=self.identification_batchsize),
             ],
         )
 
@@ -237,6 +247,9 @@ class ExactDeduplicationWorkflow(WorkflowBase):
                 workflow_result.add_metadata("input_filegroups_time", input_filegroups_time)
                 workflow_result.add_pipeline_tasks("input_filegroups", initial_tasks)
                 logger.info(f"Created input tasks from {self.input_path} in {input_filegroups_time:.2f} seconds")
+            if self.identification_batchsize == "auto":
+                msg = "Auto batch size is not implemented yet"
+                raise NotImplementedError(msg)
 
             initial_tasks = initial_tasks or []
             identification_pipeline = self._create_identification_pipeline(num_input_tasks=len(initial_tasks))
