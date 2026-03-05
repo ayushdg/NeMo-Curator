@@ -87,7 +87,7 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
         elif assign_id and id_field is not None:
             msg = "id_field must be None if assign_id is True"
             raise ValueError(msg)
-        # Set instance attributes before parent initialization
+
         self.text_field = text_field
         self.input_filetype = input_filetype
         self.assign_id_field = assign_id
@@ -96,7 +96,7 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
             output_path, storage_options=read_kwargs.get("storage_options") if read_kwargs is not None else None
         )
         self.output_path = self.output_fs.sep.join([output_path, self.name])
-        # Initialize using cooperative super() with all parameters
+
         super().__init__(
             id_generator=None,  # DeduplicationIO parameter
             # ShuffleStage parameters
@@ -188,8 +188,7 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
         This method reads all files from all tasks, concatenates them (if needed),
         hashes the text field using MD5, and inserts into the shuffle actor for
         deduplication. Processing tasks in batches significantly improves
-        throughput by reducing actor call overhead and enabling more efficient
-        GPU operations.
+        throughput by increasing the size of batches inserted during shuffle.
 
         Parameters
         ----------
@@ -226,10 +225,6 @@ class ExactDuplicateIdentification(DeduplicationIO, ShuffleStage):
 
     def read_and_insert(self, task: FileGroupTask) -> FileGroupTask:
         """Single task processing is not supported.
-
-        This stage requires batch processing via read_and_insert_batch for
-        optimal performance. The shuffle adapter will automatically route
-        tasks to the batch method.
 
         Raises
         ------
