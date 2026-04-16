@@ -1,0 +1,6 @@
+# PR Flaky CI Re-run Tracker
+
+Tracks re-runs triggered due to flaky/unrelated CI failures per PR. Updated automatically by `/babysit-prs`.
+
+| PR | Title | SHA (short) | Flaky Re-runs | Failed Jobs | Last Re-run Date |
+|----|-------|-------------|---------------|-------------|------------------|

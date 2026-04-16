@@ -165,3 +165,7 @@ fern/product-docs/
 
 # PDF parsing data (symlinked to external storage)
 pdf_parsing/
+
+# Per-user state for /babysit-prs (templates are committed as .example)
+.claude/pr-watchlist.md
+.claude/pr-flaky-reruns.md
