@@ -32,6 +32,8 @@ input_path: ???
 output_path: ???
 cache_path: ???
 input_filetype: jsonl
+input_dataset_type: document
+interleaved_text_mode: null
 text_field: "text"
 
 ray_client:
@@ -50,6 +52,8 @@ workflow:
     read_kwargs: null
     cache_kwargs: null
     write_kwargs: null
+    input_dataset_type: ${input_dataset_type}
+    interleaved_text_mode: ${interleaved_text_mode}
     text_field: ${text_field}
     perform_removal: False
     # Minhash + LSH Config
