@@ -25,7 +25,7 @@ from nemo_curator.stages.deduplication.fuzzy.buckets_to_edges import BucketsToEd
 from nemo_curator.stages.deduplication.fuzzy.connected_components import ConnectedComponentsStage
 from nemo_curator.stages.deduplication.fuzzy.identify_duplicates import IdentifyDuplicatesStage
 from nemo_curator.stages.deduplication.fuzzy.lsh.stage import LSHStage
-from nemo_curator.stages.deduplication.fuzzy.minhash import MinHashStage
+from nemo_curator.stages.deduplication.fuzzy.minhash import InterleavedMinHashStage, InterleavedTextMode, MinHashStage
 from nemo_curator.stages.deduplication.id_generator import (
     create_id_generator_actor,
     kill_id_generator_actor,
@@ -71,6 +71,8 @@ class FuzzyDeduplicationWorkflow(WorkflowBase):
         read_kwargs: dict[str, Any] | None = None,
         cache_kwargs: dict[str, Any] | None = None,
         write_kwargs: dict[str, Any] | None = None,
+        input_dataset_type: Literal["document", "interleaved"] = "document",
+        interleaved_text_mode: InterleavedTextMode | None = None,
         text_field: str = "text",
         perform_removal: bool = False,
         # Minhash + LSH Config
@@ -163,6 +165,8 @@ class FuzzyDeduplicationWorkflow(WorkflowBase):
         self.cache_kwargs = cache_kwargs
         self.write_kwargs = write_kwargs
 
+        self.input_dataset_type = input_dataset_type
+        self.interleaved_text_mode = interleaved_text_mode
         self.text_field = text_field
         self.perform_removal = perform_removal
 
@@ -193,9 +197,22 @@ class FuzzyDeduplicationWorkflow(WorkflowBase):
         if self.perform_removal:
             msg = "Removal is not implemented yet"
             raise NotImplementedError(msg)
+        if self.input_dataset_type == "interleaved":
+            if self.input_filetype != "parquet":
+                msg = "Interleaved fuzzy deduplication currently only supports parquet input files"
+                raise ValueError(msg)
+            if self.interleaved_text_mode is None:
+                msg = "interleaved_text_mode must be provided when input_dataset_type='interleaved'"
+                raise ValueError(msg)
+        elif self.input_dataset_type != "document":
+            msg = "input_dataset_type must be one of {'document', 'interleaved'}"
+            raise ValueError(msg)
         if self.bands_per_iteration < 1 or self.bands_per_iteration > self.num_bands:
             msg = "bands_per_iteration must be between [1, num_bands]"
             raise ValueError(msg)
+
+    def _minhash_stage_name(self) -> str:
+        return "InterleavedMinHashStage" if self.input_dataset_type == "interleaved" else "MinHashStage"
 
     def _create_minhash_pipeline(self, generate_input_filegroups: bool) -> Pipeline:
         stages = []
@@ -208,19 +225,34 @@ class FuzzyDeduplicationWorkflow(WorkflowBase):
                     storage_options=self.read_kwargs.get("storage_options") if self.read_kwargs is not None else None,
                 ),
             )
-        stages.append(
-            MinHashStage(
-                output_path=self.cache_path,
-                text_field=self.text_field,
-                char_ngrams=self.char_ngrams,
-                num_hashes=self.num_hashes,
-                seed=self.seed,
-                use_64bit_hash=self.use_64_bit_hash,
-                read_format=self.input_filetype,
-                read_kwargs=self.read_kwargs,
-                write_kwargs=self.cache_kwargs,
-            ),
-        )
+        if self.input_dataset_type == "interleaved":
+            stages.append(
+                InterleavedMinHashStage(
+                    output_path=self.cache_path,
+                    text_mode=self.interleaved_text_mode,
+                    text_field=self.text_field,
+                    char_ngrams=self.char_ngrams,
+                    num_hashes=self.num_hashes,
+                    seed=self.seed,
+                    use_64bit_hash=self.use_64_bit_hash,
+                    read_kwargs=self.read_kwargs,
+                    write_kwargs=self.cache_kwargs,
+                ),
+            )
+        else:
+            stages.append(
+                MinHashStage(
+                    output_path=self.cache_path,
+                    text_field=self.text_field,
+                    char_ngrams=self.char_ngrams,
+                    num_hashes=self.num_hashes,
+                    seed=self.seed,
+                    use_64bit_hash=self.use_64_bit_hash,
+                    read_format=self.input_filetype,
+                    read_kwargs=self.read_kwargs,
+                    write_kwargs=self.cache_kwargs,
+                ),
+            )
         return Pipeline(
             name="minhash_pipeline",
             stages=stages,
@@ -232,7 +264,7 @@ class FuzzyDeduplicationWorkflow(WorkflowBase):
             name="lsh_duplicate_identification_pipeline",
             stages=[
                 FilePartitioningStage(
-                    file_paths=cache_dir_fs.sep.join([self.cache_path, "MinHashStage"]),
+                    file_paths=cache_dir_fs.sep.join([self.cache_path, self._minhash_stage_name()]),
                     file_extensions=[".parquet"],
                     blocksize="2GiB",
                     storage_options=self.cache_kwargs.get("storage_options")

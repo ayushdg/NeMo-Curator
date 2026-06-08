@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 from contextlib import suppress
 from pathlib import Path
@@ -27,7 +28,7 @@ with suppress(ImportError):
 
 # Suppress GPU-related import errors when running pytest -m "not gpu"
 with suppress(ImportError):
-    from nemo_curator.stages.deduplication.fuzzy.minhash import MinHashStage
+    from nemo_curator.stages.deduplication.fuzzy.minhash import InterleavedMinHashStage, MinHashStage
     from nemo_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR
 
 from nemo_curator.tasks import FileGroupTask
@@ -268,6 +269,191 @@ class TestMinHashStage:
         # Should raise error because setup wasn't called
         with pytest.raises(RuntimeError, match="MinHash processor or ID generator not initialized"):
             stage.process(input_task)
+
+    @pytest.mark.parametrize("text_mode", ["metadata_content", "text_rows"])
+    @pytest.mark.usefixtures("ray_client_with_id_generator")
+    def test_interleaved_minhash_processing(self, tmp_path: Path, text_mode: str) -> None:
+        """Test interleaved minhash processing assigns one dedup ID per sample."""
+        duplicate_text = "alpha beta gamma duplicate document"
+        unique_text = "totally different sample document"
+        data = pd.DataFrame(
+            [
+                {
+                    "sample_id": "s_dup_a",
+                    "position": -1,
+                    "modality": "metadata",
+                    "text_content": json.dumps({"content": duplicate_text}),
+                },
+                {"sample_id": "s_dup_a", "position": 0, "modality": "text", "text_content": "alpha beta gamma"},
+                {
+                    "sample_id": "s_dup_a",
+                    "position": 1,
+                    "modality": "image",
+                    "text_content": None,
+                },
+                {
+                    "sample_id": "s_dup_a",
+                    "position": 2,
+                    "modality": "text",
+                    "text_content": "duplicate document",
+                },
+                {
+                    "sample_id": "s_dup_b",
+                    "position": -1,
+                    "modality": "metadata",
+                    "text_content": json.dumps({"content": duplicate_text}),
+                },
+                {"sample_id": "s_dup_b", "position": 0, "modality": "text", "text_content": "alpha beta gamma"},
+                {
+                    "sample_id": "s_dup_b",
+                    "position": 1,
+                    "modality": "image",
+                    "text_content": None,
+                },
+                {
+                    "sample_id": "s_dup_b",
+                    "position": 2,
+                    "modality": "text",
+                    "text_content": "duplicate document",
+                },
+                {
+                    "sample_id": "s_unique",
+                    "position": -1,
+                    "modality": "metadata",
+                    "text_content": json.dumps({"content": unique_text}),
+                },
+                {"sample_id": "s_unique", "position": 0, "modality": "text", "text_content": unique_text},
+                {
+                    "sample_id": "s_dup_z_image_only",
+                    "position": 0,
+                    "modality": "image",
+                    "text_content": None,
+                },
+            ]
+        )
+
+        input_file = tmp_path / "interleaved.parquet"
+        data.to_parquet(input_file, index=False)
+        input_task = FileGroupTask(
+            task_id=f"interleaved_{text_mode}",
+            dataset_name="interleaved_dataset",
+            data=[str(input_file)],
+            _metadata={},
+        )
+
+        stage = InterleavedMinHashStage(
+            output_path=str(tmp_path / f"output_{text_mode}"),
+            text_mode=text_mode,
+            minhash_field="_minhash_signature",
+            char_ngrams=5,
+            num_hashes=64,
+            seed=42,
+            pool=False,
+        )
+
+        stage.setup()
+        output_task = stage.process(input_task)
+        result_df = cudf.read_parquet(output_task.data[0])
+
+        assert output_task._metadata["text_mode"] == text_mode
+        assert output_task._metadata["num_documents"] == 4
+        assert output_task._metadata["num_hashable_documents"] == 3
+        assert len(result_df) == 3
+        assert CURATOR_DEDUP_ID_STR in result_df.columns
+        assert "_minhash_signature" in result_df.columns
+
+        ids = result_df[CURATOR_DEDUP_ID_STR].to_pandas().tolist()
+        assert ids == sorted(ids)
+        assert ids == [ids[0], ids[0] + 1, ids[0] + 3]
+        assert len(ids) == len(set(ids))
+
+        minhashes = result_df["_minhash_signature"].to_pandas().tolist()
+        assert minhashes[0] == minhashes[1], "Duplicate samples should have identical minhashes"
+        assert minhashes[0] != minhashes[2], "Unique samples should have different minhashes"
+
+    @pytest.mark.gpu
+    def test_interleaved_extract_documents_text(self, tmp_path: Path) -> None:
+        """Lock in the exact text used for hashing for each text_mode.
+
+        Guards against regressions in the JSON-path extraction (metadata_content) and the
+        sort-by-position + separator-join (text_rows) — pieces that the higher-level minhash
+        equality test cannot distinguish from each other.
+        """
+        metadata_text_a = "alpha beta gamma duplicate document"
+        metadata_text_b = "totally different sample document"
+        # Note: text rows for s_a are inserted out of position-order on purpose, to confirm
+        # that _extract_text_rows re-sorts by `position` before joining.
+        df = cudf.DataFrame(
+            {
+                "sample_id": [
+                    "s_a", "s_a", "s_a", "s_a",
+                    "s_b", "s_b",
+                    "s_only_image",
+                ],
+                "position": [-1, 2, 0, 1, -1, 0, 0],
+                "modality": [
+                    "metadata", "text", "text", "image",
+                    "metadata", "text",
+                    "image",
+                ],
+                "text_content": [
+                    json.dumps({"content": metadata_text_a}),
+                    "world",      # position 2
+                    "hello",      # position 0
+                    None,         # image row, position 1 — ignored by both modes
+                    json.dumps({"content": metadata_text_b}),
+                    metadata_text_b,
+                    None,
+                ],
+            }
+        )
+
+        stage_text_rows = InterleavedMinHashStage(
+            output_path=str(tmp_path / "out_text_rows"),
+            text_mode="text_rows",
+            text_separator="\n\n",
+        )
+        text_rows_df = stage_text_rows._extract_documents(df.copy()).to_pandas()
+        text_rows_df = text_rows_df.sort_values("sample_id").reset_index(drop=True)
+        assert text_rows_df["sample_id"].tolist() == ["s_a", "s_b", "s_only_image"]
+        # s_a must be re-sorted by position then joined: "hello" (pos 0) + sep + "world" (pos 2).
+        assert text_rows_df.loc[text_rows_df["sample_id"] == "s_a", "text"].iloc[0] == "hello\n\nworld"
+        # s_b has a single text row → no trailing separator.
+        assert text_rows_df.loc[text_rows_df["sample_id"] == "s_b", "text"].iloc[0] == metadata_text_b
+        assert pd.isna(text_rows_df.loc[text_rows_df["sample_id"] == "s_only_image", "text"].iloc[0])
+
+        stage_meta = InterleavedMinHashStage(
+            output_path=str(tmp_path / "out_metadata"),
+            text_mode="metadata_content",
+        )
+        meta_df = stage_meta._extract_documents(df.copy()).to_pandas()
+        meta_df = meta_df.sort_values("sample_id").reset_index(drop=True)
+        assert meta_df["sample_id"].tolist() == ["s_a", "s_b", "s_only_image"]
+        assert meta_df.loc[meta_df["sample_id"] == "s_a", "text"].iloc[0] == metadata_text_a
+        assert meta_df.loc[meta_df["sample_id"] == "s_b", "text"].iloc[0] == metadata_text_b
+        assert pd.isna(meta_df.loc[meta_df["sample_id"] == "s_only_image", "text"].iloc[0])
+
+    @pytest.mark.gpu
+    def test_interleaved_metadata_mode_rejects_duplicate_metadata_rows(self, tmp_path: Path) -> None:
+        """metadata_content mode requires at most one metadata row per sample."""
+        df = cudf.DataFrame(
+            {
+                "sample_id": ["s_a", "s_a"],
+                "position": [-1, -1],
+                "modality": ["metadata", "metadata"],
+                "text_content": [
+                    json.dumps({"content": "first metadata"}),
+                    json.dumps({"content": "second metadata"}),
+                ],
+            }
+        )
+
+        stage = InterleavedMinHashStage(
+            output_path=str(tmp_path / "out_metadata"),
+            text_mode="metadata_content",
+        )
+        with pytest.raises(ValueError, match="more than one metadata row"):
+            stage._extract_documents(df)
 
     @pytest.mark.usefixtures("ray_client_with_id_generator")
     def test_large_text_handling(self, tmp_path: Path) -> None:
