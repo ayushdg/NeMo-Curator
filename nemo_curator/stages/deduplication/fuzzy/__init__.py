@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nemo_curator.stages.deduplication.fuzzy.duplicate_groups import (
+    DUPLICATE_GROUPS_SUBDIR,
+    ShuffleDuplicateGroupsStage,
+)
 from nemo_curator.stages.deduplication.fuzzy.workflow import FuzzyDeduplicationWorkflow
 
-__all__ = ["FuzzyDeduplicationWorkflow"]
+__all__ = ["DUPLICATE_GROUPS_SUBDIR", "FuzzyDeduplicationWorkflow", "ShuffleDuplicateGroupsStage"]

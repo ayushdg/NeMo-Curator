@@ -12,6 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .grouped_duplicates import (
+    MaterializeDuplicateRunsStage,
+    MergeDuplicateGroupsStage,
+    SortDuplicatesByIdStage,
+)
+from .grouped_duplicates_workflow import WriteDuplicateGroupsWorkflow
 from .removal_workflow import TextDuplicatesRemovalWorkflow
+from .write_duplicates import ReverseIdIndex, WriteTextDuplicatesStage
+from .write_duplicates_workflow import WriteTextDuplicatesWorkflow
 
-__all__ = ["TextDuplicatesRemovalWorkflow"]
+__all__ = [
+    "MaterializeDuplicateRunsStage",
+    "MergeDuplicateGroupsStage",
+    "ReverseIdIndex",
+    "SortDuplicatesByIdStage",
+    "TextDuplicatesRemovalWorkflow",
+    "WriteDuplicateGroupsWorkflow",
+    "WriteTextDuplicatesStage",
+    "WriteTextDuplicatesWorkflow",
+]
