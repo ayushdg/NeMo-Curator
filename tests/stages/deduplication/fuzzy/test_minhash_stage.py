@@ -433,6 +433,22 @@ class TestMinHashStage:
         assert meta_df.loc[meta_df["sample_id"] == "s_b", "text"].iloc[0] == metadata_text_b
         assert pd.isna(meta_df.loc[meta_df["sample_id"] == "s_only_image", "text"].iloc[0])
 
+        stage_meta_raw = InterleavedMinHashStage(
+            output_path=str(tmp_path / "out_metadata_raw"),
+            text_mode="metadata_content",
+            metadata_json_path=None,
+        )
+        meta_raw_df = stage_meta_raw._extract_documents(df.copy()).to_pandas()
+        meta_raw_df = meta_raw_df.sort_values("sample_id").reset_index(drop=True)
+        assert meta_raw_df["sample_id"].tolist() == ["s_a", "s_b", "s_only_image"]
+        assert meta_raw_df.loc[meta_raw_df["sample_id"] == "s_a", "text"].iloc[0] == json.dumps(
+            {"content": metadata_text_a}
+        )
+        assert meta_raw_df.loc[meta_raw_df["sample_id"] == "s_b", "text"].iloc[0] == json.dumps(
+            {"content": metadata_text_b}
+        )
+        assert pd.isna(meta_raw_df.loc[meta_raw_df["sample_id"] == "s_only_image", "text"].iloc[0])
+
     @pytest.mark.gpu
     def test_interleaved_metadata_mode_rejects_duplicate_metadata_rows(self, tmp_path: Path) -> None:
         """metadata_content mode requires at most one metadata row per sample."""

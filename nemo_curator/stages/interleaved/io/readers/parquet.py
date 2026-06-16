@@ -113,6 +113,7 @@ class InterleavedParquetReaderStage(BaseInterleavedReader):
             base = self.schema if self.schema is not None else INTERLEAVED_SCHEMA
             combined = pa.Table.from_pylist([], schema=base)
 
+        combined = self._apply_ids(task.data, combined)
         splits = split_table_by_group_max_bytes(combined, "sample_id", self.max_batch_bytes)
         batches: list[InterleavedBatch] = []
         for idx, split in enumerate(splits):

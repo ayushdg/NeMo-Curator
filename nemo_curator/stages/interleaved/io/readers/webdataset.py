@@ -453,6 +453,7 @@ class InterleavedWebdatasetReaderStage(BaseInterleavedReader):
             # Empty tables use _empty_output_schema(); passthrough columns get
             # pa.null() type which is intentional (no data to infer from).
             table = pa.Table.from_pylist([], schema=self._empty_output_schema())
+        table = self._apply_ids(task.data, table)
         splits = split_table_by_group_max_bytes(table, "sample_id", self.max_batch_bytes)
         batches: list[InterleavedBatch] = []
         for idx, split in enumerate(splits):

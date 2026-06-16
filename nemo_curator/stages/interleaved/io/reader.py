@@ -99,6 +99,8 @@ class InterleavedParquetReader(CompositeStage[_EmptyTask, InterleavedBatch]):
     schema: pa.Schema | None = None
     schema_overrides: dict[str, pa.DataType] | None = None
     file_extensions: list[str] = field(default_factory=lambda: [".parquet"])
+    _generate_ids: bool = False
+    _assign_ids: bool = False
     name: str = "interleaved_parquet_reader"
 
     def __post_init__(self):
@@ -120,5 +122,7 @@ class InterleavedParquetReader(CompositeStage[_EmptyTask, InterleavedBatch]):
                 max_batch_bytes=self.max_batch_bytes,
                 schema=self.schema,
                 schema_overrides=self.schema_overrides,
+                _generate_ids=self._generate_ids,
+                _assign_ids=self._assign_ids,
             ),
         ]

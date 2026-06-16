@@ -12,17 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Literal
 
 import cudf
 import numpy as np
 import rmm
+from loguru import logger
 
 from nemo_curator.stages.base import ProcessingStage
 from nemo_curator.stages.deduplication.fuzzy.utils import CURATOR_DEFAULT_MINHASH_FIELD
 from nemo_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR, get_id_generator_actor
 from nemo_curator.stages.deduplication.io_utils import DeduplicationIO
+from nemo_curator.stages.interleaved.utils.deduplication import sample_ordering
 from nemo_curator.stages.resources import Resources
 from nemo_curator.tasks import FileGroupTask
 from nemo_curator.utils.file_utils import create_or_overwrite_dir, get_fs
@@ -369,7 +372,7 @@ class InterleavedMinHashStage(MinHashStage):
         text_content_field: str = "text_content",
         text_modality: str = "text",
         metadata_modality: str = "metadata",
-        metadata_json_path: str = "$.content",
+        metadata_json_path: str | None = "$.content",
         text_separator: str = "\n\n",
         pool: bool = True,
     ):
@@ -432,8 +435,10 @@ class InterleavedMinHashStage(MinHashStage):
                     self.text_field: cudf.Series([], dtype="str"),
                 }
             )
-
-        df[self.text_field] = df[self.text_content_field].str.get_json_object(self.metadata_json_path)
+        if self.metadata_json_path is None:
+            df[self.text_field] = df[self.text_content_field]
+        else:
+            df[self.text_field] = df[self.text_content_field].str.get_json_object(self.metadata_json_path)
         return df[[self.sample_id_field, self.text_field]]
 
     def _extract_text_rows(self, df: cudf.DataFrame) -> cudf.DataFrame:
@@ -463,14 +468,19 @@ class InterleavedMinHashStage(MinHashStage):
         identical Series, so the partition's _curator_id range can be reconstructed by positional
         lookup at removal time.
         """
-        return df[self.sample_id_field].drop_duplicates().sort_values().reset_index(drop=True)
+        return sample_ordering(df, self.sample_id_field)
 
-    def _extract_documents(self, df: cudf.DataFrame) -> cudf.DataFrame:
+    def _extract_documents_with_metrics(self, df: cudf.DataFrame) -> tuple[cudf.DataFrame, dict[str, float]]:
+        metrics = {}
+
+        sample_ordering_t0 = time.perf_counter()
         documents = self.sample_ordering(df).to_frame(name=self.sample_id_field)
+        metrics["sample_ordering_time"] = time.perf_counter() - sample_ordering_t0
         if len(documents) == 0:
             msg = "No interleaved samples found"
             raise ValueError(msg)
 
+        text_extraction_t0 = time.perf_counter()
         if self.text_mode == "metadata_content":
             extracted_text = self._extract_metadata_content(df)
         elif self.text_mode == "text_rows":
@@ -478,9 +488,21 @@ class InterleavedMinHashStage(MinHashStage):
         else:
             msg = f"Unsupported text_mode: {self.text_mode}"
             raise ValueError(msg)
+        text_extraction_time = time.perf_counter() - text_extraction_t0
+        metrics["text_extraction_time"] = text_extraction_time
+        metrics[f"{self.text_mode}_extraction_time"] = text_extraction_time
+        metrics["num_extracted_text_documents"] = float(len(extracted_text))
 
+        sample_text_join_t0 = time.perf_counter()
         documents = documents.merge(extracted_text, on=self.sample_id_field, how="left")
-        return documents.sort_values(self.sample_id_field).reset_index(drop=True)
+        documents = documents.sort_values(self.sample_id_field).reset_index(drop=True)
+        metrics["sample_text_join_time"] = time.perf_counter() - sample_text_join_t0
+        return documents, metrics
+
+    def _extract_documents(self, df: cudf.DataFrame) -> cudf.DataFrame:
+        documents, metrics = self._extract_documents_with_metrics(df)
+        self._log_metrics(metrics)
+        return documents
 
     def process(self, task: FileGroupTask) -> FileGroupTask:
         """
@@ -498,15 +520,55 @@ class InterleavedMinHashStage(MinHashStage):
             raise RuntimeError(msg)
 
         output_file = self.output_fs.sep.join([self.output_path, f"{task._uuid}.parquet"])
+
+        metrics = {"num_input_files": float(len(task.data))}
+
+        read_t0 = time.perf_counter()
         df = self._read_interleaved(task.data)
-        documents = self._extract_documents(df)
+        metrics["read_time"] = time.perf_counter() - read_t0
+        metrics["num_input_rows"] = float(len(df))
+
+        normalization_t0 = time.perf_counter()
+        documents, normalization_metrics = self._extract_documents_with_metrics(df)
+        metrics.update(normalization_metrics)
+        metrics["normalization_time"] = time.perf_counter() - normalization_t0
+        metrics["num_documents"] = float(len(documents))
+
+        assign_id_t0 = time.perf_counter()
         documents = self.assign_id(task.data, documents)
+        metrics["assign_id_time"] = time.perf_counter() - assign_id_t0
+
+        hashable_filter_t0 = time.perf_counter()
         hashable_documents = documents[documents[self.text_field].notnull()]
+        metrics["hashable_filter_time"] = time.perf_counter() - hashable_filter_t0
+        metrics["num_hashable_documents"] = float(len(hashable_documents))
+        metrics["num_skipped_documents"] = metrics["num_documents"] - metrics["num_hashable_documents"]
 
         result_df = hashable_documents[[CURATOR_DEDUP_ID_STR]]
+        minhash_t0 = time.perf_counter()
         result_df[self.minhash_field] = self.minhash_processor.compute_minhashes(hashable_documents[self.text_field])
+        metrics["minhash_time"] = time.perf_counter() - minhash_t0
 
+        write_t0 = time.perf_counter()
         self.write_parquet(df=result_df, filepath=output_file, **self.write_kwargs)
+        metrics["write_time"] = time.perf_counter() - write_t0
+
+        self._log_metrics(metrics)
+        logger.debug(
+            "InterleavedMinHashStage task={} rows={} samples={} hashable={} timings={}",
+            task.task_id,
+            int(metrics["num_input_rows"]),
+            int(metrics["num_documents"]),
+            int(metrics["num_hashable_documents"]),
+            {
+                "read_time": metrics["read_time"],
+                "normalization_time": metrics["normalization_time"],
+                "sample_text_join_time": metrics["sample_text_join_time"],
+                "assign_id_time": metrics["assign_id_time"],
+                "minhash_time": metrics["minhash_time"],
+                "write_time": metrics["write_time"],
+            },
+        )
 
         return FileGroupTask(
             task_id=f"{task.task_id}",
@@ -520,6 +582,7 @@ class InterleavedMinHashStage(MinHashStage):
                 "text_mode": self.text_mode,
                 "num_documents": len(documents),
                 "num_hashable_documents": len(hashable_documents),
+                "interleaved_minhash_metrics": metrics,
             },
             _stage_perf=task._stage_perf,
         )

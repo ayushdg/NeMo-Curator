@@ -73,6 +73,7 @@ class FuzzyDeduplicationWorkflow(WorkflowBase):
         write_kwargs: dict[str, Any] | None = None,
         input_dataset_type: Literal["document", "interleaved"] = "document",
         interleaved_text_mode: InterleavedTextMode | None = None,
+        interleaved_metadata_json_path: str | None = "$.content",
         text_field: str = "text",
         perform_removal: bool = False,
         # Minhash + LSH Config
@@ -167,6 +168,7 @@ class FuzzyDeduplicationWorkflow(WorkflowBase):
 
         self.input_dataset_type = input_dataset_type
         self.interleaved_text_mode = interleaved_text_mode
+        self.interleaved_metadata_json_path = interleaved_metadata_json_path
         self.text_field = text_field
         self.perform_removal = perform_removal
 
@@ -237,6 +239,7 @@ class FuzzyDeduplicationWorkflow(WorkflowBase):
                     use_64bit_hash=self.use_64_bit_hash,
                     read_kwargs=self.read_kwargs,
                     write_kwargs=self.cache_kwargs,
+                    metadata_json_path=self.interleaved_metadata_json_path,
                 ),
             )
         else:
