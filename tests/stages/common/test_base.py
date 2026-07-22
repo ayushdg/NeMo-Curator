@@ -439,6 +439,20 @@ class TestProcessingStageInputSpecs:
             stage.input_spec_for_task(task)
         assert stage.validate_input(task) is False
 
+    def test_invalid_legacy_tuple_input_spec_fails_validation(self) -> None:
+        stage = DictInputStage((["data"],))
+
+        with pytest.raises(TypeError, match=r"inputs\(\) must be a tuple"):
+            stage.input_spec_for_task(MockTask(data=AttrData()))
+        assert stage.validate_input(MockTask(data=AttrData())) is False
+
+    def test_invalid_dict_input_spec_fails_validation(self) -> None:
+        stage = DictInputStage({MockTask: (["data"],)})
+
+        with pytest.raises(TypeError, match=r"inputs\(\)\[MockTask\] must be a tuple"):
+            stage.input_spec_for_task(MockTask(data=AttrData()))
+        assert stage.validate_input(MockTask(data=AttrData())) is False
+
     def test_default_process_batch_uses_dict_input_spec_validation(self) -> None:
         stage = DictInputStage({MockTask: (["data"], ["text"])})
         task = MockTask(data=AttrData(text="hello"))

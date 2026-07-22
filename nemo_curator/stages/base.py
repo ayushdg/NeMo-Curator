@@ -48,6 +48,7 @@ X = TypeVar("X", bound=Task)  # Input task type
 Y = TypeVar("Y", bound=Task)  # Output task type
 StageInputSpec = tuple[list[str], list[str]]
 StageInputSpecs = StageInputSpec | dict[type[Task], StageInputSpec]
+_INPUT_SPEC_LENGTH = 2
 
 _STAGE_REGISTRY: dict[str, type[ProcessingStage]] = {}
 
@@ -232,19 +233,32 @@ class ProcessingStage(ABC, Generic[X, Y], metaclass=StageMeta):
         """
         input_specs = self.inputs()
         if isinstance(input_specs, tuple):
-            return input_specs
+            return self._validate_input_spec(input_specs, "inputs()")
+        if not isinstance(input_specs, dict):
+            msg = (
+                f"Stage {self.name} inputs() must return an input spec tuple "
+                "or dict of task type to input spec"
+            )
+            raise TypeError(msg)
 
-        for task_type in type(task).mro():
-            task_spec = input_specs.get(task_type)
-            if task_spec is not None:
-                return task_spec
+        for candidate_type in type(task).mro():
+            if candidate_type in input_specs:
+                return self._validate_input_spec(
+                    input_specs[candidate_type], f"inputs()[{candidate_type.__name__}]"
+                )
 
-        supported_task_types = ", ".join(task_type.__name__ for task_type in input_specs) or "<none>"
+        supported_task_types = ", ".join(supported_type.__name__ for supported_type in input_specs) or "<none>"
         msg = (
             f"Stage {self.name} does not support input task type {type(task).__name__}. "
             f"Supported input task types: {supported_task_types}"
         )
         raise TypeError(msg)
+
+    def _validate_input_spec(self, input_spec: object, source: str) -> StageInputSpec:
+        if not isinstance(input_spec, tuple) or len(input_spec) != _INPUT_SPEC_LENGTH:
+            msg = f"Stage {self.name} {source} must be a tuple of (required_attributes, required_columns)"
+            raise TypeError(msg)
+        return cast("StageInputSpec", input_spec)
 
     @abstractmethod
     def process(self, task: X) -> Y | list[Y]:
