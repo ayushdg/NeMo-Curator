@@ -22,7 +22,7 @@ import pyarrow as pa
 import rmm
 from loguru import logger
 
-from nemo_curator.stages.base import ProcessingStage
+from nemo_curator.stages.base import ProcessingStage, StageInputSpecs
 from nemo_curator.stages.deduplication.fuzzy.utils import CURATOR_DEFAULT_MINHASH_FIELD
 from nemo_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR, get_id_generator_actor
 from nemo_curator.stages.deduplication.io_utils import DeduplicationIO
@@ -277,6 +277,10 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
         try:
             self.id_generator = get_id_generator_actor()
         except ValueError:
+            logger.warning(
+                "IdGenerator actor was not found during MinHashStage setup. "
+                "FileGroupTask inputs will fail at process time; DocumentBatch inputs are unaffected."
+            )
             self.id_generator = None
 
         # Initialize the GPU minhash processor
@@ -288,37 +292,16 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
             pool=self.pool,
         )
 
-    def inputs(self) -> tuple[list[str], list[str]]:
-        """Define input requirements.
-
-        The required columns apply to the DocumentBatch input path; they are declared here for
-        documentation / ``Pipeline.describe()`` and enforced type-aware in ``validate_input``
-        (a FileGroupTask has no columns until its files are read).
-        """
-        return (["data"], [CURATOR_DEDUP_ID_STR, self.text_field])
+    def inputs(self) -> StageInputSpecs:
+        """Define input requirements for each supported input task type."""
+        return {
+            FileGroupTask: (["data"], []),
+            DocumentBatch: (["data"], [CURATOR_DEDUP_ID_STR, self.text_field]),
+        }
 
     def outputs(self) -> tuple[list[str], list[str]]:
         """Define outputs - produces FileGroupTask with minhash files."""
         return (["data"], [])
-
-    def validate_input(self, task: FileGroupTask | DocumentBatch) -> bool:
-        """Validate input for either a FileGroupTask or a DocumentBatch.
-
-        The base implementation checks required columns via ``hasattr(task.data, col)``, which is
-        wrong for this union (a FileGroupTask's ``data`` is a ``list[str]`` and a pyarrow-backed
-        DocumentBatch does not expose columns as attributes). We therefore validate the required
-        columns for a DocumentBatch via ``get_columns()`` and only check ``data`` presence for a
-        FileGroupTask (its columns are unknown until the files are read).
-        """
-        if not hasattr(task, "data"):
-            logger.error(f"Task {task.task_id} missing required attribute: data")
-            return False
-        if isinstance(task, DocumentBatch):
-            missing = {CURATOR_DEDUP_ID_STR, self.text_field} - set(task.get_columns())
-            if missing:
-                logger.error(f"DocumentBatch {task.task_id} missing required columns: {sorted(missing)}")
-                return False
-        return True
 
     def process(self, task: FileGroupTask | DocumentBatch) -> FileGroupTask:
         """

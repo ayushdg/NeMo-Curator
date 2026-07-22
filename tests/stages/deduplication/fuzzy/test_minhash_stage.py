@@ -430,6 +430,15 @@ class TestMinHashStage:
             }
         )
 
+    def test_inputs_declares_type_specific_requirements(self, tmp_path: Path) -> None:
+        """MinHash declares separate input specs for file and in-memory paths."""
+        stage = MinHashStage(output_path=str(tmp_path / "inputs"), text_field="text", pool=False)
+
+        assert stage.inputs() == {
+            FileGroupTask: (["data"], []),
+            DocumentBatch: (["data"], [CURATOR_DEDUP_ID_STR, "text"]),
+        }
+
     @pytest.mark.usefixtures("shared_ray_client")
     def test_document_batch_validate_input_missing_id_column(self, tmp_path: Path) -> None:
         """A DocumentBatch without the ID column fails validation."""
