@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 
 X = TypeVar("X", bound=Task)  # Input task type
 Y = TypeVar("Y", bound=Task)  # Output task type
+StageInputSpec = tuple[list[str], list[str]]
+StageInputSpecs = StageInputSpec | dict[type[Task], StageInputSpec]
 
 _STAGE_REGISTRY: dict[str, type[ProcessingStage]] = {}
 
@@ -180,7 +182,11 @@ class ProcessingStage(ABC, Generic[X, Y], metaclass=StageMeta):
         Returns:
             True if valid, False otherwise
         """
-        required_top_level_attrs, required_data_attrs = self.inputs()
+        try:
+            required_top_level_attrs, required_data_attrs = self.input_spec_for_task(task)
+        except TypeError as e:
+            logger.error(str(e))
+            return False
 
         # Check required attributes exist
         missing_top_level_attrs = []
@@ -203,6 +209,29 @@ class ProcessingStage(ABC, Generic[X, Y], metaclass=StageMeta):
             )
 
         return not missing_top_level_attrs and not missing_data_attrs
+
+    def input_spec_for_task(self, task: Task) -> StageInputSpec:
+        """Return the input requirements that apply to ``task``.
+
+        Stages may return either the legacy single input spec or a mapping from
+        supported task type to spec. For mappings, the most specific task type in
+        the task's MRO wins.
+        """
+        input_specs = self.inputs()
+        if isinstance(input_specs, tuple):
+            return input_specs
+
+        for task_type in type(task).mro():
+            task_spec = input_specs.get(task_type)
+            if task_spec is not None:
+                return task_spec
+
+        supported_task_types = ", ".join(task_type.__name__ for task_type in input_specs) or "<none>"
+        msg = (
+            f"Stage {self.name} does not support input task type {type(task).__name__}. "
+            f"Supported input task types: {supported_task_types}"
+        )
+        raise TypeError(msg)
 
     @abstractmethod
     def process(self, task: X) -> Y | list[Y]:
@@ -286,11 +315,12 @@ class ProcessingStage(ABC, Generic[X, Y], metaclass=StageMeta):
         """String representation of the stage."""
         return f"{self.__class__.__name__}"
 
-    def inputs(self) -> tuple[list[str], list[str]]:
+    def inputs(self) -> StageInputSpecs:
         """Define stage input requirements.
 
-        Returns (tuple[list[str], list[str]]):
-            Tuple of (required_attributes, required_columns) where:
+        Returns:
+            Either a single tuple of (required_attributes, required_columns), or
+            a mapping from supported task type to that tuple. In each tuple:
             - required_top_level_attributes: List of task attributes that must be present
             - required_data_attributes: List of attributes within the data that must be present
         """
@@ -444,7 +474,7 @@ class CompositeStage(ProcessingStage[X, Y], ABC):
     def __init__(self):
         self._with_operations = []
 
-    def inputs(self) -> tuple[list[str], list[str]]:
+    def inputs(self) -> StageInputSpecs:
         """Get the inputs for this stage."""
         return self.decompose()[0].inputs()
 
