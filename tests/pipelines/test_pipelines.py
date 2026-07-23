@@ -104,6 +104,20 @@ class _DictInputStage(_NoopStage):
         return {_SimpleTask: (["data"], ["values"])}
 
 
+class _TupleInputStage(_NoopStage):
+    name = "tuple-input"
+
+    def inputs(self) -> StageInputSpecs:
+        return (["data"], ["values"])
+
+
+class _EmptyDictInputStage(_NoopStage):
+    name = "empty-dict-input"
+
+    def inputs(self) -> StageInputSpecs:
+        return {_SimpleTask: ([], [])}
+
+
 def test_describe_renders_dict_input_specs() -> None:
     description = Pipeline(name="test", stages=[_DictInputStage()]).describe()
 
@@ -111,6 +125,23 @@ def test_describe_renders_dict_input_specs() -> None:
     assert "    _SimpleTask:" in description
     assert "      Required attributes: data" in description
     assert "      Required columns: values" in description
+    assert "Error getting stage info" not in description
+
+
+def test_describe_renders_tuple_input_specs() -> None:
+    description = Pipeline(name="test", stages=[_TupleInputStage()]).describe()
+
+    assert "  Inputs:" in description
+    assert "    Required attributes: data" in description
+    assert "    Required columns: values" in description
+    assert "Error getting stage info" not in description
+
+
+def test_describe_skips_empty_dict_input_specs() -> None:
+    description = Pipeline(name="test", stages=[_EmptyDictInputStage()]).describe()
+
+    assert "  Inputs:" not in description
+    assert "    _SimpleTask:" not in description
     assert "Error getting stage info" not in description
 
 
