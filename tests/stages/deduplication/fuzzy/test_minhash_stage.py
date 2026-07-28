@@ -163,10 +163,20 @@ class TestMinHashStage:
         assert stage.validate_input(input_task) is True
         output_task = stage.process(input_task)
 
+        # The input-preparation metric identifies which input path ran.
+        if isinstance(input_task, DocumentBatch):
+            input_prep_metric = "minhash_document_batch_to_cudf_time"
+            unused_input_prep_metric = "minhash_file_read_time"
+        else:
+            input_prep_metric = "minhash_file_read_time"
+            unused_input_prep_metric = "minhash_document_batch_to_cudf_time"
+        assert stage._custom_metrics[input_prep_metric] > 0
+        assert unused_input_prep_metric not in stage._custom_metrics
+
         # Verify detailed stage timings are recorded
         assert all(
             stage._custom_metrics[metric] > 0
-            for metric in ("minhash_read_time", "minhash_compute_time", "minhash_write_time")
+            for metric in ("minhash_compute_time", "minhash_write_time")
         )
 
         # Verify output task structure (output is always a FileGroupTask)

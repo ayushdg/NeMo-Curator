@@ -319,9 +319,12 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
             msg = "MinHash processor not initialized. Call setup() first."
             raise RuntimeError(msg)
 
+        is_document_batch = isinstance(task, DocumentBatch)
+        input_prep_metric = "minhash_document_batch_to_cudf_time" if is_document_batch else "minhash_file_read_time"
+
         # Read/convert the input into a cuDF DataFrame with the text and ID columns.
-        with self._time_metric("minhash_read_time"):
-            df = self._read_document_batch(task) if isinstance(task, DocumentBatch) else self._read_file_group(task)
+        with self._time_metric(input_prep_metric):
+            df = self._read_document_batch(task) if is_document_batch else self._read_file_group(task)
 
         output_file = self.output_fs.sep.join([self.output_path, f"{task.task_id}.parquet"])
 
