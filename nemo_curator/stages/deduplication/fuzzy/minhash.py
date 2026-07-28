@@ -320,15 +320,18 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
             raise RuntimeError(msg)
 
         # Read/convert the input into a cuDF DataFrame with the text and ID columns.
-        df = self._read_document_batch(task) if isinstance(task, DocumentBatch) else self._read_file_group(task)
+        with self._time_metric("minhash_read_time"):
+            df = self._read_document_batch(task) if isinstance(task, DocumentBatch) else self._read_file_group(task)
 
         output_file = self.output_fs.sep.join([self.output_path, f"{task.task_id}.parquet"])
 
         result_df = df[[CURATOR_DEDUP_ID_STR]]
-        result_df[self.minhash_field] = self.minhash_processor.compute_minhashes(df[self.text_field])
+        with self._time_metric("minhash_compute_time"):
+            result_df[self.minhash_field] = self.minhash_processor.compute_minhashes(df[self.text_field])
 
         # Write output file
-        self.write_parquet(df=result_df, filepath=output_file, **self.write_kwargs)
+        with self._time_metric("minhash_write_time"):
+            self.write_parquet(df=result_df, filepath=output_file, **self.write_kwargs)
 
         # Return FileGroupTask with output file
         return FileGroupTask(
