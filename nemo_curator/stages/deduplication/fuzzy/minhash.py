@@ -319,12 +319,8 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
             msg = "MinHash processor not initialized. Call setup() first."
             raise RuntimeError(msg)
 
-        is_document_batch = isinstance(task, DocumentBatch)
-        input_prep_metric = "minhash_document_batch_to_cudf_time" if is_document_batch else "minhash_file_read_time"
-
         # Read/convert the input into a cuDF DataFrame with the text and ID columns.
-        with self._time_metric(input_prep_metric):
-            df = self._read_document_batch(task) if is_document_batch else self._read_file_group(task)
+        df = self._read_document_batch(task) if isinstance(task, DocumentBatch) else self._read_file_group(task)
 
         output_file = self.output_fs.sep.join([self.output_path, f"{task.task_id}.parquet"])
 
@@ -351,24 +347,25 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
 
     def _read_file_group(self, task: FileGroupTask) -> "cudf.DataFrame":
         """Read a FileGroupTask's files into cuDF, assigning IDs at read time."""
-        if self.id_generator is None:
-            msg = (
-                "IdGenerator actor is required for FileGroupTask input but was not found. "
-                "Start it via create_id_generator_actor(), or pass a DocumentBatch whose data "
-                "already contains the _curator_dedup_id column."
-            )
-            raise RuntimeError(msg)
+        with self._time_metric("minhash_file_read_time"):
+            if self.id_generator is None:
+                msg = (
+                    "IdGenerator actor is required for FileGroupTask input but was not found. "
+                    "Start it via create_id_generator_actor(), or pass a DocumentBatch whose data "
+                    "already contains the _curator_dedup_id column."
+                )
+                raise RuntimeError(msg)
 
-        read_kwargs = self.read_kwargs.copy()
+            read_kwargs = self.read_kwargs.copy()
 
-        # Read input file based on format
-        if self.read_format == "jsonl":
-            return self.read_jsonl(filepath=task.data, columns=[self.text_field], assign_id=True, **read_kwargs)
-        elif self.read_format == "parquet":
-            return self.read_parquet(filepath=task.data, columns=[self.text_field], assign_id=True, **read_kwargs)
-        else:
-            msg = f"read_format must be 'jsonl' or 'parquet' to process a FileGroupTask; got {self.read_format!r}"
-            raise ValueError(msg)
+            # Read input file based on format
+            if self.read_format == "jsonl":
+                return self.read_jsonl(filepath=task.data, columns=[self.text_field], assign_id=True, **read_kwargs)
+            elif self.read_format == "parquet":
+                return self.read_parquet(filepath=task.data, columns=[self.text_field], assign_id=True, **read_kwargs)
+            else:
+                msg = f"read_format must be 'jsonl' or 'parquet' to process a FileGroupTask; got {self.read_format!r}"
+                raise ValueError(msg)
 
     def _read_document_batch(self, task: DocumentBatch) -> "cudf.DataFrame":
         """Convert an in-memory DocumentBatch to cuDF, keeping only the ID and text columns.
@@ -377,12 +374,13 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
         file path only reads ``columns=[text_field]``. The required columns are guaranteed present
         by ``validate_input``; when ``process`` is called directly a missing column will raise here.
         """
-        keep = [CURATOR_DEDUP_ID_STR, self.text_field]
-        data = task.data
-        if isinstance(data, pa.Table):
-            return cudf.DataFrame.from_arrow(data.select(keep))
-        elif isinstance(data, pd.DataFrame):
-            return cudf.from_pandas(data[keep])
-        else:
-            msg = f"Unsupported DocumentBatch data type: {type(data)}"
-            raise TypeError(msg)
+        with self._time_metric("minhash_document_batch_to_cudf_time"):
+            keep = [CURATOR_DEDUP_ID_STR, self.text_field]
+            data = task.data
+            if isinstance(data, pa.Table):
+                return cudf.DataFrame.from_arrow(data.select(keep))
+            elif isinstance(data, pd.DataFrame):
+                return cudf.from_pandas(data[keep])
+            else:
+                msg = f"Unsupported DocumentBatch data type: {type(data)}"
+                raise TypeError(msg)
