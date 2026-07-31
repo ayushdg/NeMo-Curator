@@ -241,6 +241,9 @@ class ProcessingStage(ABC, Generic[X, Y], metaclass=StageMeta):
             )
             raise TypeError(msg)
 
+        # Search the task's MRO from most to least specific. For example, given
+        # CustomDocumentBatch -> DocumentBatch -> Task, look for an input spec
+        # for CustomDocumentBatch first, then DocumentBatch, and finally Task.
         for candidate_type in type(task).mro():
             if candidate_type in input_specs:
                 return self._validate_input_spec(
