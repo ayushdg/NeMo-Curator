@@ -30,6 +30,7 @@ import pyarrow.parquet as pq
 from loguru import logger
 from utils import load_dataset_files, setup_executor, write_benchmark_results
 
+from nemo_curator.backends.utils import RayStageSpecKeys
 from nemo_curator.pipeline import Pipeline
 from nemo_curator.stages.deduplication.fuzzy.minhash import MinHashStage
 from nemo_curator.stages.deduplication.id_generator import (
@@ -81,6 +82,8 @@ def _build_pipeline(  # noqa: PLR0913
     read_kwargs: dict[str, Any],
     write_kwargs: dict[str, Any],
     pool: bool,
+    minhash_num_workers: int | None,
+    minhash_ray_data_initial_workers: int | None,
 ) -> Pipeline:
     """Build a MinHash pipeline for the requested input task type."""
     if input_task_type == "DocumentBatch":
@@ -117,6 +120,12 @@ def _build_pipeline(  # noqa: PLR0913
         write_kwargs=write_kwargs,
         pool=pool,
     )
+    if minhash_num_workers is not None:
+        minhash_stage = minhash_stage.with_(num_workers=minhash_num_workers)
+    if minhash_ray_data_initial_workers is not None:
+        minhash_stage = minhash_stage.with_(
+            ray_stage_spec={RayStageSpecKeys.INITIAL_WORKERS: minhash_ray_data_initial_workers}
+        )
     return Pipeline(name="minhash_benchmark_pipeline", stages=[input_stage, minhash_stage])
 
 
@@ -128,7 +137,7 @@ def _count_output_documents(output_tasks: list[Any]) -> int:
 def run_minhash_benchmark(  # noqa: PLR0913
     input_path: Path,
     output_path: Path,
-    executor: str = "ray_actor_pool",
+    executor: str = "ray_actors",
     dataset_size_ratio: float = 1.0,
     input_task_type: InputTaskType = "FileGroupTask",
     input_filetype: Literal["jsonl", "parquet"] = "jsonl",
@@ -143,9 +152,19 @@ def run_minhash_benchmark(  # noqa: PLR0913
     read_kwargs: dict[str, Any] | None = None,
     write_kwargs: dict[str, Any] | None = None,
     pool: bool = True,
+    minhash_num_workers: int | None = None,
+    minhash_ray_data_initial_workers: int | None = None,
     **kwargs: object,  # noqa: ARG001
 ) -> dict[str, Any]:
     """Run MinHash over a whole-file fraction of a JSONL or Parquet dataset."""
+    if minhash_ray_data_initial_workers is not None:
+        if executor != "ray_data":
+            msg = "minhash_ray_data_initial_workers is only supported by the ray_data executor"
+            raise ValueError(msg)
+        if minhash_num_workers is not None:
+            msg = "minhash_num_workers and minhash_ray_data_initial_workers are mutually exclusive"
+            raise ValueError(msg)
+
     input_path = input_path.absolute()
     output_path = output_path.absolute()
     output_path.mkdir(parents=True, exist_ok=True)
@@ -186,6 +205,8 @@ def run_minhash_benchmark(  # noqa: PLR0913
         read_kwargs=read_kwargs,
         write_kwargs=write_kwargs,
         pool=pool,
+        minhash_num_workers=minhash_num_workers,
+        minhash_ray_data_initial_workers=minhash_ray_data_initial_workers,
     )
     executor_obj = setup_executor(executor)
 
@@ -202,10 +223,10 @@ def run_minhash_benchmark(  # noqa: PLR0913
 
     num_documents_processed = _count_output_documents(output_tasks)
     task_metrics = TaskPerfUtils.aggregate_task_metrics(output_tasks)
-    input_prep_metric = (
-        "MinHashStage_custom.minhash_document_batch_to_cudf_time_sum"
+    input_prep_metric_prefix = (
+        "MinHashStage_custom.minhash_document_batch_to_cudf_time"
         if input_task_type == "DocumentBatch"
-        else "MinHashStage_custom.minhash_file_read_time_sum"
+        else "MinHashStage_custom.minhash_file_read_time"
     )
 
     logger.success(f"Benchmark completed in {run_time_taken:.2f}s")
@@ -219,9 +240,12 @@ def run_minhash_benchmark(  # noqa: PLR0913
             "num_output_tasks": len(output_tasks),
             "num_documents_processed": num_documents_processed,
             "throughput_docs_per_sec": (num_documents_processed / run_time_taken if run_time_taken > 0 else 0),
-            "minhash_input_prep_worker_time_s_sum": task_metrics.get(input_prep_metric, 0),
+            "minhash_input_prep_worker_time_s_sum": task_metrics.get(f"{input_prep_metric_prefix}_sum", 0),
             "minhash_compute_worker_time_s_sum": task_metrics.get("MinHashStage_custom.minhash_compute_time_sum", 0),
             "minhash_write_worker_time_s_sum": task_metrics.get("MinHashStage_custom.minhash_write_time_sum", 0),
+            "minhash_input_prep_worker_time_s_mean": task_metrics.get(f"{input_prep_metric_prefix}_mean", 0),
+            "minhash_compute_worker_time_s_mean": task_metrics.get("MinHashStage_custom.minhash_compute_time_mean", 0),
+            "minhash_write_worker_time_s_mean": task_metrics.get("MinHashStage_custom.minhash_write_time_mean", 0),
         },
         "tasks": output_tasks,
     }
@@ -234,8 +258,8 @@ def main() -> int:
     parser.add_argument("--output-path", type=Path, required=True, help="Output directory for MinHash files")
     parser.add_argument(
         "--executor",
-        default="ray_actor_pool",
-        choices=["ray_actor_pool", "xenna", "ray_data"],
+        default="ray_actors",
+        choices=["ray_actors", "xenna", "ray_data"],
         help="Pipeline executor",
     )
     parser.add_argument(
@@ -293,6 +317,18 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Enable the MinHash GPU memory pool",
+    )
+    parser.add_argument(
+        "--minhash-num-workers",
+        type=int,
+        default=None,
+        help="Fixed number of MinHash workers; executor-selected when omitted",
+    )
+    parser.add_argument(
+        "--minhash-ray-data-initial-workers",
+        type=int,
+        default=None,
+        help="Initial size of the autoscaling Ray Data MinHash actor pool",
     )
 
     args = parser.parse_args()
