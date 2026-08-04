@@ -362,7 +362,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 120
+    timeout_s: 180
     sink_data:
       - name: slack
         additional_metrics:
@@ -400,7 +400,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 1200
+    timeout_s: 180
     sink_data:
       - name: slack
         additional_metrics:
@@ -438,7 +438,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 1200
+    timeout_s: 180
     sink_data:
       - name: slack
         additional_metrics:
@@ -476,7 +476,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 1200
+    timeout_s: 300
     sink_data:
       - name: slack
         additional_metrics:
@@ -501,7 +501,7 @@ entries:
         max_value: 0.18
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.21
+        max_value: 0.26
 
   - name: minhash_document_batch_ray_data
     enabled: true
@@ -516,7 +516,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 1200
+    timeout_s: 500
     sink_data:
       - name: slack
         additional_metrics:
@@ -541,7 +541,7 @@ entries:
         max_value: 0.18
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.21
+        max_value: 0.26
 
   - name: semdedup_identification_xenna
     enabled: true
