@@ -516,6 +516,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
+      --minhash-ray-data-initial-workers=8
     timeout_s: 500
     sink_data:
       - name: slack
