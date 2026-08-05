@@ -549,7 +549,7 @@ entries:
         min_value: 0.12
         max_value: 0.26
 
-  - name: minhash_document_batch_ray_data_initial_actors_8
+  - name: minhash_document_batch_ray_data_num_workers_8
     enabled: true
     script: minhash_benchmark.py
     args: >-
@@ -562,7 +562,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-      --minhash-ray-data-initial-workers=8
+      --minhash-num-workers=8
     timeout_s: 500
     sink_data:
       - name: slack
