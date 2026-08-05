@@ -376,16 +376,18 @@ entries:
     requirements:
       - metric: num_documents_processed
         exact_value: 174163347
+      - metric: throughput_docs_per_sec
+        min_value: 1300000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.16
+        max_value: 0.24
       # FileGroupTask input prep measures cuDF reading the source files.
       - metric: minhash_input_prep_worker_time_s_mean
-        min_value: 0.035
-        max_value: 0.1
+        min_value: 0.22
+        max_value: 0.35
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.21
+        max_value: 0.26
 
   - name: minhash_file_group_task_xenna
     enabled: false
@@ -414,16 +416,18 @@ entries:
     requirements:
       - metric: num_documents_processed
         exact_value: 174163347
+      - metric: throughput_docs_per_sec
+        min_value: 1300000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.16
+        max_value: 0.24
       # FileGroupTask input prep measures cuDF reading the source files.
       - metric: minhash_input_prep_worker_time_s_mean
-        min_value: 0.035
-        max_value: 0.1
+        min_value: 0.22
+        max_value: 0.35
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.21
+        max_value: 0.26
 
   - name: minhash_file_group_task_ray_data
     enabled: false
@@ -452,16 +456,18 @@ entries:
     requirements:
       - metric: num_documents_processed
         exact_value: 174163347
+      - metric: throughput_docs_per_sec
+        min_value: 1300000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.16
+        max_value: 0.24
       # FileGroupTask input prep measures cuDF reading the source files.
       - metric: minhash_input_prep_worker_time_s_mean
-        min_value: 0.035
-        max_value: 0.1
+        min_value: 0.22
+        max_value: 0.35
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.21
+        max_value: 0.26
 
   - name: minhash_document_batch_xenna
     enabled: true
@@ -491,10 +497,10 @@ entries:
       - metric: num_documents_processed
         exact_value: 174163347
       - metric: throughput_docs_per_sec
-        min_value: 500000
+        min_value: 700000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.16
+        max_value: 0.24
       # DocumentBatch input prep measures host-to-device transfer.
       - metric: minhash_input_prep_worker_time_s_mean
         min_value: 0.08
@@ -504,6 +510,46 @@ entries:
         max_value: 0.26
 
   - name: minhash_document_batch_ray_data
+    enabled: true
+    script: minhash_benchmark.py
+    args: >-
+      --benchmark-results-path={session_entry_dir}
+      --input-path={dataset:rpv2-2023-14-en,parquet}
+      --output-path={session_entry_dir}/scratch/output
+      --executor=ray_data
+      --dataset-size-ratio=0.25
+      --input-task-type=DocumentBatch
+      --input-filetype=parquet
+      --blocksize=512MiB
+      --text-field=raw_content
+    timeout_s: 500
+    sink_data:
+      - name: slack
+        additional_metrics:
+          - num_documents_processed
+          - throughput_docs_per_sec
+          - minhash_input_prep_worker_time_s_mean
+          - minhash_compute_worker_time_s_mean
+          - minhash_write_worker_time_s_mean
+        ping_on_failure:
+          - UBDSVEQPL  # Ayush Dattagupta
+    requirements:
+      - metric: num_documents_processed
+        exact_value: 174163347
+      - metric: throughput_docs_per_sec
+        min_value: 500000
+      - metric: minhash_compute_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.24
+      # DocumentBatch input prep measures host-to-device transfer.
+      - metric: minhash_input_prep_worker_time_s_mean
+        min_value: 0.08
+        max_value: 0.18
+      - metric: minhash_write_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.26
+
+  - name: minhash_document_batch_ray_data_initial_actors_8
     enabled: true
     script: minhash_benchmark.py
     args: >-
@@ -532,10 +578,10 @@ entries:
       - metric: num_documents_processed
         exact_value: 174163347
       - metric: throughput_docs_per_sec
-        min_value: 400000
+        min_value: 500000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.16
+        max_value: 0.24
       # DocumentBatch input prep measures host-to-device transfer.
       - metric: minhash_input_prep_worker_time_s_mean
         min_value: 0.08
