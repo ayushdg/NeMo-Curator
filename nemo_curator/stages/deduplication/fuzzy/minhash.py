@@ -212,7 +212,7 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
         Random seed for reproducible minhash generation
     use_64bit_hash : bool, default=False
         Whether to use 64-bit hash functions (vs 32-bit)
-    read_format : Literal["jsonl", "parquet"] | None, default="jsonl"
+    read_format : Literal["jsonl", "parquet"] | None, default=None
         Format of input files. Only applies to FileGroupTask inputs; ignored for DocumentBatch
         inputs (which are already in memory). May be None when only DocumentBatch inputs are used.
     read_kwargs : dict[str, Any] | None, default=None
@@ -241,7 +241,7 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
         num_hashes: int = 260,
         seed: int = 42,
         use_64bit_hash: bool = False,
-        read_format: Literal["jsonl", "parquet"] | None = "jsonl",
+        read_format: Literal["jsonl", "parquet"] | None = None,
         read_kwargs: dict[str, Any] | None = None,
         write_kwargs: dict[str, Any] | None = None,
         pool: bool = True,
@@ -320,7 +320,15 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
             raise RuntimeError(msg)
 
         # Read/convert the input into a cuDF DataFrame with the text and ID columns.
-        df = self._read_document_batch(task) if isinstance(task, DocumentBatch) else self._read_file_group(task)
+        if isinstance(task, DocumentBatch):
+            if self.read_format is not None:
+                logger.warning(
+                    f"read_format={self.read_format!r} is ignored for DocumentBatch inputs because their data is "
+                    "already loaded."
+                )
+            df = self._read_document_batch(task)
+        else:
+            df = self._read_file_group(task)
 
         output_file = self.output_fs.sep.join([self.output_path, f"{task.task_id}.parquet"])
 
