@@ -142,8 +142,8 @@ class TestMinHashStage:
         text_field: str,
     ) -> None:
         """Test minhash processing across all input types (FileGroupTask jsonl/parquet, DocumentBatch pandas/pyarrow)."""
-        # read_format only applies to the file path; DocumentBatch inputs ignore it.
-        read_format = input_task._metadata.get("format", "jsonl")
+        # read_format only applies to the file path.
+        read_format = input_task._metadata.get("format")
 
         # Create stage
         stage = MinHashStage(
@@ -532,20 +532,42 @@ class TestMinHashStage:
 
     @pytest.mark.usefixtures("ray_client_with_id_generator")
     def test_read_format_none_ok_for_document_batch(self, batch_dataframe: pd.DataFrame, tmp_path: Path) -> None:
-        """read_format=None is fine for DocumentBatch input (no file reading happens)."""
+        """read_format defaults to None and is okay if no file reading happens."""
         task = DocumentBatch(dataset_name="docbatch", data=batch_dataframe, _metadata={})
         stage = MinHashStage(
             output_path=str(tmp_path / "rf_none"),
             text_field="text",
-            read_format=None,
+            num_hashes=64,
+            char_ngrams=3,
+            pool=False,
+        )
+        assert stage.read_format is None
+        stage.setup()
+        output_task = stage.process(task)
+        result_df = cudf.read_parquet(output_task.data[0])
+        assert len(result_df) == 5
+
+    @pytest.mark.usefixtures("ray_client_with_id_generator")
+    def test_read_format_warns_for_document_batch(
+        self,
+        batch_dataframe: pd.DataFrame,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A configured read_format warns when it is ignored for a DocumentBatch."""
+        task = DocumentBatch(dataset_name="docbatch", data=batch_dataframe, _metadata={})
+        stage = MinHashStage(
+            output_path=str(tmp_path / "rf_ignored"),
+            text_field="text",
+            read_format="jsonl",
             num_hashes=64,
             char_ngrams=3,
             pool=False,
         )
         stage.setup()
-        output_task = stage.process(task)
-        result_df = cudf.read_parquet(output_task.data[0])
-        assert len(result_df) == 5
+        with caplog.at_level("WARNING"):
+            stage.process(task)
+        assert "read_format='jsonl' is ignored for DocumentBatch inputs" in caplog.text
 
     @pytest.mark.usefixtures("ray_client_with_id_generator")
     def test_read_format_none_raises_for_filegroup(self, tmp_path: Path) -> None:
