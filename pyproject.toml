@@ -99,6 +99,7 @@ inference_server = [
 # Installs CPU + GPU text curation modules
 deduplication_cuda12 = [
     "cudf-cu12==26.8.*",
+    "cudf-streaming-cu12==26.8.*",
     "cuml-cu12==26.8.*",
     #"scikit-learn<1.8.0",  # cuml 25.10.0 is incompatible with scikit-learn 1.8.0
     "pylibcugraph-cu12==26.8.*",
