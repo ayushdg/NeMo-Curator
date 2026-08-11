@@ -18,17 +18,13 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import cudf
 import rmm.mr
-from rapidsmpf.buffer.buffer import MemoryType
-from rapidsmpf.buffer.resource import BufferResource, LimitAvailableMemory
-from rapidsmpf.integrations.cudf.partition import (
-    partition_and_pack,
-    unpack_and_concat,
-    unspill_partitions,
-)
-from rapidsmpf.rmm_resource_adaptor import RmmResourceAdaptor
+from cudf_streaming.partition_utils import partition_and_pack, unpack_and_concat
+from rapidsmpf.integrations.ray import RapidsMPFActor
+from rapidsmpf.memory.buffer import MemoryType
+from rapidsmpf.memory.buffer_resource import BufferResource
+from rapidsmpf.memory.spill import unspill_partitions
+from rapidsmpf.shuffler import Shuffler
 from rapidsmpf.statistics import Statistics
-from rapidsmpf.utils.cudf import cudf_to_pylibcudf_table, pylibcudf_to_cudf_dataframe
-from rapidsmpf.utils.ray_utils import BaseShufflingActor
 
 from nemo_curator.stages.deduplication.gpu_utils import align_down_to_256, get_device_free_memory
 
@@ -36,11 +32,21 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     import pylibcudf as plc
-    from rapidsmpf.shuffler import Shuffler
+
+
+def cudf_to_pylibcudf_table(df: cudf.DataFrame) -> plc.Table:
+    """Return the pylibcudf table backing a cuDF DataFrame."""
+    table, _ = df.to_pylibcudf()
+    return table
+
+
+def pylibcudf_to_cudf_dataframe(table: plc.Table, column_names: list[str]) -> cudf.DataFrame:
+    """Build a cuDF DataFrame around a pylibcudf table with named columns."""
+    return cudf.DataFrame.from_pylibcudf(table, metadata={"columns": column_names})
 
 
 # Exempt this class from coverage is it's indirectly tested by the ShuffleStage which coverage tools don't pick up.
-class BulkRapidsMPFShuffler(BaseShufflingActor):  # pragma: no cover
+class BulkRapidsMPFShuffler(RapidsMPFActor):  # pragma: no cover
     """
     Class that performs a bulk shuffle operation.
     This class is compatible with Ray Actors communicating with each other using UCXX communication.
@@ -83,7 +89,6 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):  # pragma: no cover
         read_kwargs: dict[str, Any] | None = None,
         write_kwargs: dict[str, Any] | None = None,
     ):
-        super().__init__(nranks)
         self.shuffle_on = shuffle_on
         self.output_path = output_path
         self.total_nparts = total_nparts
@@ -114,6 +119,19 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):  # pragma: no cover
         self.read_kwargs = read_kwargs if read_kwargs is not None else {}
         self.write_kwargs = write_kwargs if write_kwargs is not None else {}
 
+        # BufferResource owns the tracking adaptor used by RapidsMPF and cuDF.
+        base_mr = rmm.mr.PoolMemoryResource(
+            rmm.mr.CudaMemoryResource(),
+            initial_pool_size=self.rmm_pool_size,
+            maximum_pool_size=None,
+        )
+        memory_limits = None if self.spill_memory_limit is None else {MemoryType.DEVICE: self.spill_memory_limit}
+        statistics = Statistics(enable=self.enable_statistics)
+        self.br = BufferResource(base_mr, memory_limits=memory_limits, statistics=statistics)
+        self.mr = self.br.device_mr_adaptor()
+        rmm.mr.set_current_device_resource(self.mr)
+        super().__init__(nranks, statistics)
+
     def setup_worker(self, root_address_bytes: bytes) -> None:
         """
         Setup the UCXX communication and a shuffle operation.
@@ -125,36 +143,17 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):  # pragma: no cover
         """
         super().setup_worker(root_address_bytes)
 
-        # Initialize the RMM memory resource
-        mr = RmmResourceAdaptor(
-            rmm.mr.PoolMemoryResource(
-                rmm.mr.CudaMemoryResource(),
-                initial_pool_size=self.rmm_pool_size,
-                maximum_pool_size=None,
-            )
-        )
-        rmm.mr.set_current_device_resource(mr)
-        # Create a buffer resource that limits device memory if spill_memory_limit is set
-        memory_available = (
-            None
-            if self.spill_memory_limit is None
-            else {MemoryType.DEVICE: LimitAvailableMemory(mr, limit=self.spill_memory_limit)}
-        )
-        self.br = BufferResource(device_mr=mr, memory_available=memory_available)
-        # Create a statistics object
-        self.stats = Statistics(enable=self.enable_statistics, mr=mr)
-        # Create a shuffler
-        self.shuffler: Shuffler = self.create_shuffler(
+        self.shuffler: Shuffler = Shuffler(
+            self.comm,
             0,
             total_num_partitions=self.total_nparts,
-            buffer_resource=self.br,
-            statistics=self.stats,
+            br=self.br,
         )
 
     def cleanup(self) -> None:
         """Cleanup the UCXX communication and the shuffle operation."""
-        if self.enable_statistics and self.stats is not None:
-            self.comm.logger.info(self.stats.report())
+        if self.enable_statistics:
+            self.comm.logger.info(self.statistics.report(mr=self.mr))
         if self.shuffler is not None:
             self.shuffler.shutdown()
 
@@ -257,13 +256,12 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):  # pragma: no cover
 
     def insert_finished(self) -> None:
         """Tell the shuffler that we are done inserting data."""
-        for pid in range(self.total_nparts):
-            self.shuffler.insert_finished(pid)
+        self.shuffler.insert_finished()
         self.comm.logger.info("Insert finished")
 
     def extract(self) -> Iterator[tuple[int, plc.Table]]:
         """
-        Extract shuffled partitions as they become ready.
+        Extract shuffled partitions after the shuffle completes.
 
         Returns
         -------
@@ -271,15 +269,14 @@ class BulkRapidsMPFShuffler(BaseShufflingActor):  # pragma: no cover
         """
         from rmm.pylibrmm.stream import DEFAULT_STREAM
 
-        while not self.shuffler.finished():
-            partition_id = self.shuffler.wait_any()
+        self.shuffler.wait()
+        for partition_id in self.shuffler.local_partitions():
             packed_chunks = self.shuffler.extract(partition_id)
             partition = unpack_and_concat(
                 unspill_partitions(
                     packed_chunks,
                     br=self.br,
                     allow_overbooking=True,
-                    statistics=self.stats,
                 ),
                 br=self.br,
                 stream=DEFAULT_STREAM,

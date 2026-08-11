@@ -19,11 +19,13 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import cudf
 from loguru import logger
-from rapidsmpf.utils.cudf import pylibcudf_to_cudf_dataframe
 
 from nemo_curator.stages.deduplication.fuzzy.utils import CURATOR_DEFAULT_MINHASH_FIELD, CURATOR_LSH_BUCKET_FIELD
 from nemo_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR
-from nemo_curator.stages.deduplication.shuffle_utils.rapidsmpf_shuffler import BulkRapidsMPFShuffler
+from nemo_curator.stages.deduplication.shuffle_utils.rapidsmpf_shuffler import (
+    BulkRapidsMPFShuffler,
+    pylibcudf_to_cudf_dataframe,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
