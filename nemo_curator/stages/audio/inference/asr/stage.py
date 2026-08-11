@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING, Any
 
 import hydra.utils
 import numpy as np
-import soundfile
 import torch
 import torchaudio
 from loguru import logger
@@ -122,7 +121,6 @@ class ASRStage(ProcessingStage[AudioTask, AudioTask]):
     adapter_target: str
     model_id: str
     name: str = "ASR_inference"
-    revision: str | None = None
 
     # Task I/O keys.
     audio_filepath_key: str = "resampled_audio_filepath"
@@ -137,6 +135,7 @@ class ASRStage(ProcessingStage[AudioTask, AudioTask]):
     extras_key: str | None = None
 
     skip_if_output_exists: bool = False
+    fail_on_audio_error: bool = False
 
     prefetch_fail_on_error: bool = True
 
@@ -184,6 +183,13 @@ class ASRStage(ProcessingStage[AudioTask, AudioTask]):
         """Resolve the configured adapter lazily to avoid importing optional model dependencies."""
         return hydra.utils.get_class(self.adapter_target)
 
+    def _create_adapter(self) -> ASRAdapter:
+        """Construct one adapter with only its explicitly configured options."""
+        return self._adapter_class()(
+            model_id=self.model_id,
+            **self.adapter_kwargs,
+        )
+
     def setup_on_node(
         self,
         _node_info: NodeInfo | None = None,
@@ -191,7 +197,7 @@ class ASRStage(ProcessingStage[AudioTask, AudioTask]):
     ) -> None:
         """Cache model weights once per node (no GPU allocation)."""
         try:
-            self._adapter_class().download_weights_on_node(self.model_id, self.revision)
+            self._create_adapter().download_weights_on_node()
             logger.info(
                 "ASR weights cached on node for {} ({})",
                 self.model_id,
@@ -205,12 +211,7 @@ class ASRStage(ProcessingStage[AudioTask, AudioTask]):
 
     def setup(self, _worker_metadata: WorkerMetadata | None = None) -> None:
         if self._adapter is None:
-            cls = self._adapter_class()
-            adapter = cls(
-                model_id=self.model_id,
-                revision=self.revision,
-                **self.adapter_kwargs,
-            )
+            adapter = self._create_adapter()
             try:
                 adapter.load_model(num_gpus=self._adapter_gpu_count())
             except Exception:
@@ -292,15 +293,13 @@ class ASRStage(ProcessingStage[AudioTask, AudioTask]):
     def _load_audio(audio_filepath: str) -> tuple[np.ndarray, int]:
         """Open one resampled file inside the ASR worker.
 
-        ``soundfile`` avoids making PCM WAV decoding depend on TorchCodec's
-        optional CUDA/FFmpeg shared libraries. SoundFile returns multichannel
-        audio as sample-major, so transpose it to the channel-first shape used
-        by ``_prepare_waveform``.
+        ``torchaudio.load`` returns channel-first audio. Resampled pipeline
+        inputs are normally mono, so squeezing removes that singleton channel;
+        multichannel inputs remain channel-first for ``_prepare_waveform`` to
+        downmix.
         """
-        waveform, sample_rate = soundfile.read(audio_filepath, dtype="float32")
-        if waveform.ndim == _CHANNEL_FIRST_DIMENSIONS:
-            waveform = waveform.T
-        return np.ascontiguousarray(waveform, dtype=np.float32), sample_rate
+        waveform, sample_rate = torchaudio.load(audio_filepath)
+        return waveform.squeeze(0).numpy(), sample_rate
 
     def _prepare_waveform(self, waveform: object, sample_rate: object) -> np.ndarray:
         """Return contiguous mono float32 samples at ``target_sample_rate``."""
@@ -390,7 +389,10 @@ class ASRStage(ProcessingStage[AudioTask, AudioTask]):
                     audio_source = str(item["audio_filepath"])
                     waveform, sample_rate = self._load_audio(audio_source)
                 waveform = self._prepare_waveform(waveform, sample_rate)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
+                if self.fail_on_audio_error:
+                    msg = f"ASRStage ({self.adapter_target}): failed to prepare audio for task {item['task_id']} from {audio_source}"
+                    raise RuntimeError(msg) from exc
                 logger.warning(
                     "ASRStage ({}): failed to prepare audio for task {} from {}: {}",
                     self.adapter_target,

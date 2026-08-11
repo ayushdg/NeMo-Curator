@@ -14,10 +14,12 @@
 
 """Tests for the generic ``ASRStage`` exercised against a mock ``ASRAdapter`` (no real model load)."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 from nemo_curator.backends.base import BaseStageAdapter
 from nemo_curator.models.asr.base import ASRResult
@@ -39,6 +41,7 @@ def _make_stage(  # noqa: PLR0913
     waveform_key: str | None = None,
     keep_waveform: bool = False,
     extras_key: str | None = None,
+    fail_on_audio_error: bool = False,
 ) -> ASRStage:
     """Build an ASRStage wired to a mock adapter (no real model load)."""
     stage = ASRStage(
@@ -52,6 +55,7 @@ def _make_stage(  # noqa: PLR0913
         waveform_key=waveform_key,
         keep_waveform=keep_waveform,
         extras_key=extras_key,
+        fail_on_audio_error=fail_on_audio_error,
     )
     mock_adapter = MagicMock()
     stage._adapter = mock_adapter
@@ -163,6 +167,16 @@ def test_audio_load_failure_skips_only_failed_item_and_preserves_order() -> None
     assert "_skipme" not in results[2].data
     inferred_items = stage._adapter.transcribe_batch.call_args.args[0]
     assert [item["task_id"] for item in inferred_items] == [tasks[0].task_id, tasks[2].task_id]
+
+
+def test_audio_load_failure_can_fail_strict_benchmarks() -> None:
+    stage = _make_stage(fail_on_audio_error=True)
+    stage._load_audio.side_effect = RuntimeError("corrupt audio")
+
+    with pytest.raises(RuntimeError, match="failed to prepare audio"):
+        stage.process_batch([_make_task()])
+
+    stage._adapter.transcribe_batch.assert_not_called()
 
 
 def test_skip_if_output_exists_reuses_prediction_and_only_infers_missing_rows() -> None:
@@ -348,29 +362,24 @@ def test_in_memory_input_contract_requires_waveform_and_sample_rate() -> None:
     assert required_inputs == ["waveform", "sampling_rate"]
 
 
-def test_stage_loads_resampled_audio_like_tagging_pipeline_and_preserves_sample_rate() -> None:
+def test_stage_loads_resampled_audio_with_torchaudio_and_preserves_sample_rate(tmp_path: Path) -> None:
     decoded_sample_rate = 8000
-    decoded = np.ones(_SR, dtype=np.float32)
-    with patch(
-        "nemo_curator.stages.audio.inference.asr.stage.soundfile.read",
-        return_value=(decoded, decoded_sample_rate),
-    ) as load:
-        waveform, sample_rate = ASRStage._load_audio(_RESAMPLED_AUDIO_PATH)
+    audio_path = tmp_path / "resampled.wav"
+    sf.write(audio_path, np.ones(_SR, dtype=np.float32), decoded_sample_rate, subtype="FLOAT")
 
-    load.assert_called_once_with(_RESAMPLED_AUDIO_PATH, dtype="float32")
+    waveform, sample_rate = ASRStage._load_audio(str(audio_path))
     assert sample_rate == decoded_sample_rate
     assert waveform.shape == (_SR,)
     assert waveform.dtype == np.float32
     np.testing.assert_array_equal(waveform, np.ones(_SR, dtype=np.float32))
 
 
-def test_stage_load_audio_transposes_soundfile_stereo_to_channel_first() -> None:
+def test_stage_load_audio_preserves_stereo_channel_first(tmp_path: Path) -> None:
     decoded = np.ones((_SR, 2), dtype=np.float32)
-    with patch(
-        "nemo_curator.stages.audio.inference.asr.stage.soundfile.read",
-        return_value=(decoded, _SR),
-    ):
-        waveform, sample_rate = ASRStage._load_audio(_RESAMPLED_AUDIO_PATH)
+    audio_path = tmp_path / "stereo.wav"
+    sf.write(audio_path, decoded, _SR, subtype="FLOAT")
+
+    waveform, sample_rate = ASRStage._load_audio(str(audio_path))
 
     assert sample_rate == _SR
     assert waveform.shape == (2, _SR)
@@ -480,9 +489,13 @@ def test_skipped_result_sets_typed_skip_reason(result: ASRResult, expected_reaso
 
 @patch("nemo_curator.models.asr.qwen_omni.snapshot_download")
 def test_setup_on_node_downloads_weights(mock_download: MagicMock) -> None:
-    stage = ASRStage(adapter_target=_QWEN_ADAPTER_TARGET, model_id="mock/model")
+    stage = ASRStage(
+        adapter_target=_QWEN_ADAPTER_TARGET,
+        model_id="mock/model",
+        adapter_kwargs={"revision": "abc123"},
+    )
     stage.setup_on_node()
-    mock_download.assert_called_once_with("mock/model")
+    mock_download.assert_called_once_with("mock/model", revision="abc123")
 
 
 @patch(
@@ -520,18 +533,27 @@ def test_model_id_required() -> None:
         ASRStage(adapter_target=_QWEN_ADAPTER_TARGET)
 
 
+def test_stage_rejects_model_specific_revision_field() -> None:
+    with pytest.raises(TypeError, match="unexpected keyword argument 'revision'"):
+        ASRStage(
+            adapter_target=_QWEN_ADAPTER_TARGET,
+            model_id="mock/model",
+            revision="abc123",  # type: ignore[call-arg]
+        )
+
+
 def test_setup_uses_adapter_target_and_kwargs() -> None:
     """``setup()`` resolves adapter_target via hydra.utils.get_class and
-    constructs the adapter with model_id+revision+**adapter_kwargs."""
+    constructs the adapter with model_id plus its explicit adapter_kwargs."""
     stage = ASRStage(
         adapter_target=_QWEN_ADAPTER_TARGET,
         model_id="mock/model",
-        revision="abc123",
         adapter_kwargs={
+            "revision": "abc123",
             "vllm_kwargs": {
                 "max_model_len": 8192,
                 "enable_prefix_caching": False,
-            }
+            },
         },
         resources=Resources(gpus=2),
     )
