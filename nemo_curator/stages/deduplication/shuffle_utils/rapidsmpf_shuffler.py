@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import cudf
 import rmm.mr
+from rapidsmpf.config import Options
 from rapidsmpf.integrations.cudf.partition import (
     partition_and_pack,
     unpack_and_concat,
@@ -25,7 +26,7 @@ from rapidsmpf.integrations.cudf.partition import (
 )
 from rapidsmpf.integrations.ray import RapidsMPFActor
 from rapidsmpf.memory.buffer import MemoryType
-from rapidsmpf.memory.buffer_resource import BufferResource, LimitAvailableMemory
+from rapidsmpf.memory.buffer_resource import BufferResource, LimitAvailableMemory, stream_pool_from_options
 from rapidsmpf.rmm_resource_adaptor import RmmResourceAdaptor
 from rapidsmpf.shuffler import Shuffler
 from rapidsmpf.statistics import Statistics
@@ -62,6 +63,8 @@ class BulkRapidsMPFShuffler(RapidsMPFActor):  # pragma: no cover
         Device memory limit in bytes for spilling to host.
         If "auto", the limit is set to 80% of the RMM pool size.
         If None spilling is disabled.
+    num_streams
+        Number of CUDA streams in the RapidsMPF buffer resource's stream pool.
     enable_statistics
         Whether to collect shuffle statistics.
     read_kwargs
@@ -78,6 +81,7 @@ class BulkRapidsMPFShuffler(RapidsMPFActor):  # pragma: no cover
         output_path: str = "./",
         rmm_pool_size: int | Literal["auto"] | None = "auto",
         spill_memory_limit: int | Literal["auto"] | None = "auto",
+        num_streams: int = 1,
         *,
         enable_statistics: bool = False,
         read_kwargs: dict[str, Any] | None = None,
@@ -87,6 +91,7 @@ class BulkRapidsMPFShuffler(RapidsMPFActor):  # pragma: no cover
         self.output_path = output_path
         self.total_nparts = total_nparts
 
+        self.num_streams = num_streams
         if isinstance(rmm_pool_size, int):
             self.rmm_pool_size = align_down_to_256(rmm_pool_size)
         elif rmm_pool_size == "auto":
@@ -129,7 +134,8 @@ class BulkRapidsMPFShuffler(RapidsMPFActor):  # pragma: no cover
             if self.spill_memory_limit is None
             else {MemoryType.DEVICE: LimitAvailableMemory(self.mr, limit=self.spill_memory_limit)}
         )
-        self.br = BufferResource(self.mr, memory_available=memory_available)
+        stream_pool = stream_pool_from_options(Options({"num_streams": str(self.num_streams)}))
+        self.br = BufferResource(self.mr, memory_available=memory_available, stream_pool=stream_pool)
 
         super().__init__(nranks, Statistics(enable=self.enable_statistics, mr=self.mr))
 
