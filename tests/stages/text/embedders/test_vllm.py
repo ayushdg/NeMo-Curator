@@ -38,7 +38,7 @@ def sample_data() -> DocumentBatch:
     """Create sample text data for testing."""
     texts = ["Hello world", "This is a test", "Machine learning is great"]
     data = pd.DataFrame({"text": texts})
-    return DocumentBatch(task_id="test_batch", dataset_name="test_dataset", data=data)
+    return DocumentBatch(dataset_name="test_dataset", data=data)
 
 
 @pytest.fixture(scope="module")
@@ -58,7 +58,7 @@ class TestVLLMEmbeddingModelStage:
         assert stage.model_identifier == TEST_MODEL
         assert stage.text_field == "text"
         assert stage.embedding_field == "embeddings"
-        assert stage.pretokenize is False
+        assert stage.pretokenize is True
         assert stage.verbose is False
         assert stage.model is None
         assert stage.tokenizer is None
@@ -134,7 +134,7 @@ class TestVLLMEmbeddingModelStage:
 
         stage.setup_on_node()
 
-        # setup_on_node calls snapshot_download(local_files_only=False) to download
+        # setup_on_node calls snapshot_download(local_files_only=False) to download the model
         download_call = captured["snapshot_download_calls"][0]
         assert download_call["cache_dir"] == str(cache_dir)
         assert download_call["token"] == hf_token

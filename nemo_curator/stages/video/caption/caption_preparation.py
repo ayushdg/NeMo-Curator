@@ -17,7 +17,7 @@ from itertools import zip_longest
 
 from loguru import logger
 
-from nemo_curator.backends.base import WorkerMetadata
+from nemo_curator.backends.base import NodeInfo, WorkerMetadata
 from nemo_curator.models.prompt_formatter import PromptFormatter
 from nemo_curator.stages.base import ProcessingStage
 from nemo_curator.tasks.video import VideoTask, _Window
@@ -84,7 +84,6 @@ class CaptionPreparationStage(ProcessingStage[VideoTask, VideoTask]):
     sampling_fps: float = 2.0
     window_size: int = 256
     remainder_threshold: int = 128
-    model_does_preprocess: bool = False
     preprocess_dtype: str = "float32"
     generate_previews: bool = True
     name: str = "caption_preparation"
@@ -95,20 +94,15 @@ class CaptionPreparationStage(ProcessingStage[VideoTask, VideoTask]):
     def outputs(self) -> tuple[list[str], list[str]]:
         return [], []
 
-    def __post_init__(self) -> None:
-        self._skip_intermediate_resize = False
-        if self.model_variant.startswith("nemotron"):
-            if not self.model_does_preprocess:
-                logger.warning(
-                    f"model_variant={self.model_variant!r}: overriding model_does_preprocess=True. "
-                    "Nemotron uses vLLM's internal preprocessing; CLIP normalization must not be applied beforehand."
-                )
-                self.model_does_preprocess = True
-            self._skip_intermediate_resize = True
+    def setup_on_node(self, node_info: NodeInfo | None = None, worker_metadata: WorkerMetadata | None = None) -> None:  # noqa: ARG002
+        # Pre-warm the AutoProcessor trust_remote_code module cache once (sequentially)
+        # before parallel workers start. Without this, concurrent workers race to write
+        # the same transformers_modules cache files, causing partial-load AttributeErrors.
+        self.prompt_formatter = PromptFormatter(self.model_variant)
 
     def setup(self, worker_metadata: WorkerMetadata | None = None) -> None:  # noqa: ARG002
-        # PromptFormatter uses AutoProcessor from HuggingFace (auto-downloads/caches)
-        self.prompt_formatter = PromptFormatter(self.model_variant)
+        if not hasattr(self, "prompt_formatter"):
+            self.prompt_formatter = PromptFormatter(self.model_variant)
 
     def process(self, task: VideoTask) -> VideoTask:
         video = task.data
@@ -125,9 +119,7 @@ class CaptionPreparationStage(ProcessingStage[VideoTask, VideoTask]):
                     window_size=self.window_size,
                     remainder_threshold=self.remainder_threshold,
                     sampling_fps=self.sampling_fps,
-                    model_does_preprocess=self.model_does_preprocess,
                     preprocess_dtype=self.preprocess_dtype,
-                    skip_resize=self._skip_intermediate_resize,
                     return_bytes=self.generate_previews,
                     num_threads=max(int(self.resources.cpus), 1),
                 ),

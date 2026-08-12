@@ -22,8 +22,12 @@ for extra in $GPU_TEST_EXTRAS; do
   EXTRA_FLAGS="$EXTRA_FLAGS --extra $extra"
 done
 
-uv sync --link-mode copy --locked $EXTRA_FLAGS --group test
+uv sync --no-progress --link-mode copy --locked $EXTRA_FLAGS --group test
 
 export CUSTOM_HF_DATASET=/home/TestData/HF_HOME
+
+if [[ "$GPU_TEST_PATHS" == *"stages/audio"* ]]; then
+    apt-get update -qq && apt-get install -y --no-install-recommends ffmpeg
+fi
 
 CUDA_VISIBLE_DEVICES="0,1" coverage run -a --source=nemo_curator -m pytest -m gpu $GPU_TEST_PATHS

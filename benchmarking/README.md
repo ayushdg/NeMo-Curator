@@ -5,9 +5,12 @@ A comprehensive benchmarking framework for measuring and tracking the performanc
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Nightly Benchmark Ownership](#nightly-benchmark-ownership)
 - [Concepts](#concepts)
 - [Configuration](#configuration)
 - [Running benchmarks and using the container](#running-benchmarks-and-using-the-container)
+- [Audio Benchmark Data Setup](#audio-benchmark-data-setup)
+- [Audio Tagging Benchmark](#audio-tagging-benchmark)
 - [Writing Benchmark Scripts](#writing-benchmark-scripts)
 - [Sinks: Custom Reporting & Actions](#sinks-custom-reporting--actions)
 
@@ -19,7 +22,7 @@ A comprehensive benchmarking framework for measuring and tracking the performanc
 
 Assuming the working directory is the NeMo Curator repo root dir:
 ```bash
-./benchmarking/tools/build_docker.sh
+./benchmarking/tools/build_docker.sh --tag-as-latest
 ```
 
 This builds the `curator_benchmarking` image with:
@@ -33,22 +36,37 @@ Note: you may only need to do this periodically when the environment needs to be
 
 **2. Update config:**
 
-Update `results_path` and `datasets_path` in the YAML config file based on your preferences. In this example, we'll edit the YAML config `./benchmarking/nightly-benchmark.yaml`
+Update the `host_path` values in the `paths` section of the YAML config file based on your preferences. In this example, we'll edit the YAML config `./benchmarking/nightly-benchmark.yaml`
 
 ```yaml
-results_path: /path/where/results/are/stored
-datasets_path: /path/to/datasets
+paths:
+  - name: results_path
+    host_path: /path/where/results/are/stored
+  - name: datasets_path
+    host_path: /path/to/datasets
+    container_path: /datasets
+  - name: model_weights_path
+    host_path: /path/to/model_weights
+    container_path: /model_weights
 ```
+
+Keep `model_weights_path` configured when running benchmarks that consume
+pre-staged model snapshots or caches, such as audio tagging.
 
 **3. Run benchmarks:**
 
 ```bash
-./benchmarking/tools/run.sh --config ./benchmarking/nightly-benchmark.yaml
+./benchmarking/tools/run.sh \
+  --config ./benchmarking/nightly-benchmark.yaml \
+  --config ./benchmarking/nightly-data-setup.yaml
 ```
 
 To run using the Curator sources on the host instead of those in the image, pass the `--use-host-curator` option:
 ```bash
-./benchmarking/tools/run.sh --config ./benchmarking/nightly-benchmark.yaml --use-host-curator
+./benchmarking/tools/run.sh \
+  --config ./benchmarking/nightly-benchmark.yaml \
+  --config ./benchmarking/nightly-data-setup.yaml \
+  --use-host-curator
 ```
 This is especially useful during active development and debugging since it avoids a costly rebuild step.
 
@@ -56,6 +74,32 @@ This is especially useful during active development and debugging since it avoid
 **4. View results:**
 
 Results are written to the `results_path` specified in your configuration, organized by session timestamp.
+
+---
+
+## Nightly Benchmark Ownership
+
+Curator owns the benchmark workload: `benchmarking/nightly-benchmark.yaml`,
+the benchmark runner, benchmark scripts, data setup scripts, and local developer
+tools such as `benchmarking/tools/run.sh`.
+
+The scheduled nightly run is orchestrated outside of the Curator repository by
+CI infrastructure. That pipeline reads Curator's
+`benchmarking/nightly-benchmark.yaml`, generates one scheduler job per enabled
+entry, and starts each job in a benchmark runtime environment.
+
+Each generated job invokes Curator's `benchmarking/run.py` for its assigned
+entry. The jobs share a session name and results root so their per-entry outputs
+are collected as one logical nightly benchmark session. The CI layer also
+provides environment-specific path overrides, such as mapping the public
+benchmark config's logical dataset and results paths to the storage locations
+available in that runtime environment.
+
+CI-only files that control job generation, path mapping, and runtime launch
+behavior live in a CI orchestration repository outside Curator. Keeping those
+files out of Curator lets benchmark infrastructure change independently of the
+Curator source ref or prebuilt Curator image being benchmarked, which is
+important for release-candidate and historical-image runs.
 
 ---
 
@@ -124,15 +168,42 @@ An example of a development scenario using this pattern looks like this:
 ### Configuration Structure
 
 ```yaml
-# Required: Base paths for results and datasets
-# These paths must exist on the host machine
-# When running in Docker with tools/run.sh, paths are automatically mapped to container volumes
-# These base paths can be referenced in other configuration values using {results_path}, {datasets_path}
-results_path: /path/to/results
-datasets_path: /path/to/datasets
+# Required: Paths to files and directories used by the benchmarks.
+# Each entry must have a "name" and a "host_path". The name can be referenced elsewhere
+# in the config using {name} placeholders (e.g. {datasets_path}).
+# When running in Docker with tools/run.sh, each path is automatically mounted into the
+# container. An optional "container_path" overrides the default mount point
+# (which is the host_path prefixed with "/MOUNT").
+# An entry with name "results_path" is required.
+paths:
+  - name: results_path
+    host_path: /path/to/results
+  - name: datasets_path
+    host_path: /path/to/datasets
+    container_path: /datasets  # optional override
+  - name: model_weights_path
+    host_path: /path/to/model_weights
+    container_path: /model_weights  # optional override
 
-# Optional: Global timeout for all entries (seconds)
+# Optional: Global timeout for entries that omit timeout_s (seconds)
 default_timeout_s: 7200
+
+# Optional: Maximum allowed effective timeout for any entry (seconds).
+# Defaults to 14340 (3h59m).
+max_timeout_s: 14340
+
+# Optional: Free-text reason for the run, persisted in env.json and surfaced to sinks.
+run_reason: "26.06 RC7 benchmarks"
+
+# Optional: Resolved benchmark viewer URL, persisted in env.json and surfaced to sinks.
+# Set either viewer_url or viewer_url_template, not both.
+viewer_url: "http://viewer.example.com/run-viewer?dir=/path/to/results/session"
+
+# Optional: Benchmark viewer URL template. Used when viewer_url is not set, and
+# rendered after the session name/path are known. Supported placeholders are:
+# {results_path}, {results_path_url}, {session_name}, {session_name_url},
+# {session_path}, and {session_path_url}. The *_url forms are URL-encoded.
+viewer_url_template: "http://viewer.example.com/run-viewer?dir={results_path_url}&run={session_name_url}"
 
 # Optional: Delete scratch directories after each entry completes
 # The path {session_entry_dir}/scratch is automatically created when an entry starts and can be used by benchmark
@@ -154,6 +225,12 @@ sinks:
     enabled: false
     drive_folder_id: ${GDRIVE_FOLDER_ID}
     service_account_file: ${GDRIVE_SERVICE_ACCOUNT_FILE}
+
+# Optional: Global Ray settings inherited by all entries; per-entry ray sections override these values
+ray:
+  num_cpus: 64
+  num_gpus: 8
+  enable_object_spilling: false
 
 # Optional: Define datasets for template substitution
 datasets:
@@ -205,7 +282,45 @@ python benchmarking/run.py \
   --config machine_specific.yaml
 ```
 
-Files are merged in order. Later files override earlier ones for conflicting keys.
+Files are merged in order using a deep recursive merge, so later files can override or extend specific nested values without replacing entire top-level keys.
+
+**Merge behavior:**
+- **Scalar values** (strings, numbers, booleans): later file wins.
+- **Nested dicts**: merged recursively — only the keys present in the later file are updated.
+- **Lists of dicts** (e.g. `entries`, `paths`, `requirements`, `sinks`): items are matched by their `name` key when present (the canonical identifier for most list items), falling back to the first key otherwise. If a matching item is found, it is merged recursively; if not, the item is appended. Use `name` in override files whenever possible to ensure reliable matching.
+
+This makes it practical to write small override files that change only specific entries or requirements without duplicating the full configuration.
+
+**Example — overriding a single entry's timeout and requirements:**
+
+Base config (`nightly-benchmark.yaml`) defines many entries including:
+```yaml
+entries:
+  - name: domain_classification_xenna
+    timeout_s: 1400
+    requirements:
+      - metric: throughput_docs_per_sec
+        min_value: 3000
+```
+
+Override file (`my_overrides.yaml`) changes only that entry's timeout and requirement minimum:
+```yaml
+entries:
+  - name: domain_classification_xenna
+    timeout_s: 2000
+    requirements:
+      - metric: throughput_docs_per_sec
+        min_value: 2000
+```
+
+Running with both files:
+```bash
+python benchmarking/run.py \
+  --config nightly-benchmark.yaml \
+  --config my_overrides.yaml
+```
+
+Results in `domain_classification_xenna` using `timeout_s: 2000` and `min_value: 2000`, while all other entries remain unchanged.
 
 **Session naming:**
 
@@ -215,12 +330,54 @@ python benchmarking/run.py \
   --session-name my-experiment-v2
 ```
 
+**Benchmark viewer URL:**
+
+To include a link to a benchmark run viewer in sinks such as Slack, pass a resolved URL with `--viewer-url`:
+
+```bash
+python benchmarking/run.py \
+  --config config.yaml \
+  --viewer-url "http://viewer.example.com/run-viewer?dir=/path/to/results/&run=my-session"
+```
+
+If part of the URL depends on the selected results path or session name, use `--viewer-url-template`. The template is rendered after the final session name and session path are known. When benchmarks run in a container with configured `host_path` / `container_path` mounts, path placeholders use the host-visible path so links work outside the container:
+
+```bash
+python benchmarking/run.py \
+  --config config.yaml \
+  --session-name my-session \
+  --viewer-url-template "http://viewer.example.com/run-viewer?dir={results_path_url}&run={session_name_url}"
+```
+
+For a viewer that reads results from a remote host path, include the host in the template:
+
+```bash
+python benchmarking/run.py \
+  --config config.yaml \
+  --viewer-url-template "http://rratzel-ws1:5050/run-viewer?dir=dgx-a100-01%3A{results_path_url}%2F&run={session_name_url}"
+```
+
+Supported `--viewer-url-template` placeholders:
+
+| Placeholder | Value |
+| --- | --- |
+| `{results_path}` | The configured results root directory, unmapped to the host-visible path when running in a container. |
+| `{results_path_url}` | URL-encoded `results_path`. |
+| `{session_name}` | The resolved session name, either from `--session-name` or the generated default. |
+| `{session_name_url}` | URL-encoded `session_name`. |
+| `{session_path}` | The full session result directory, equivalent to `{results_path}/{session_name}`, unmapped to the host-visible path when running in a container. |
+| `{session_path_url}` | URL-encoded `session_path`. |
+
+Use `results_path` when the viewer expects the results root and a separate `run` parameter. Use `session_path` when the viewer expects a single path directly to the session directory. Set either `viewer_url` or `viewer_url_template`, not both.
+
 ### Environment Variables
 
 Configuration values can reference environment variables using `${VAR_NAME}` syntax:
 
 ```yaml
-results_path: "${HOME}/benchmarks/results"
+paths:
+  - name: results_path
+    host_path: "${HOME}/benchmarks/results"
 sinks:
   - name: slack
     channel_id: ${SLACK_CHANNEL_ID}
@@ -232,7 +389,7 @@ sinks:
 
 The framework supports several types of placeholders in configuration values:
 
-**Base path references** - Reference the configured base paths:
+**Path references** - Reference paths by their `name` from the `paths` section:
 
 ```yaml
 datasets:
@@ -242,9 +399,7 @@ datasets:
         path: "{datasets_path}/subdir/data.parquet"
 ```
 
-Available base path placeholders:
-- `{results_path}` - Resolves to the configured `results_path`
-- `{datasets_path}` - Resolves to the configured `datasets_path`
+Any name defined in the `paths` section can be used as a placeholder. For example, if your `paths` section defines entries named `datasets_path` and `model_weights_path`, both `{datasets_path}` and `{model_weights_path}` are valid placeholders.
 
 **Dataset references** - Reference datasets in entry arguments:
 
@@ -284,13 +439,22 @@ requirements:
     max_value: 64
 ```
 
-**ray**: Configures Ray resources for the entry:
+**ray**: Configures Ray resources. A global `ray` section can be defined at the top level of the configuration to set defaults inherited by all entries. Per-entry `ray` sections override individual keys from the global defaults.
 
+Global defaults (applies to all entries unless overridden):
 ```yaml
 ray:
   num_cpus: 64
-  num_gpus: 4
-  enable_object_spilling: false  # Disable object spilling to local disk
+  num_gpus: 8
+  enable_object_spilling: false
+```
+
+Per-entry override (only the differing keys need to be specified):
+```yaml
+entries:
+  - name: my_benchmark
+    ray:
+      num_gpus: 0  # overrides global num_gpus; num_cpus and enable_object_spilling inherit global values
 ```
 
 ---
@@ -395,6 +559,152 @@ For more details, refer to the `--help` output for `run.sh`
 
 ---
 
+## Audio Benchmark Data Setup
+
+Audio benchmarks that depend on external corpora use the same two-layer setup:
+
+1. Run a `benchmarking/data_prep/prepare_*_data.py` script once on the benchmark
+   machine to populate persistent paths under `{datasets_path}` and, when
+   needed, `{model_weights_path}`.
+2. Run nightly entries with `--raw-data-dir` and `--no-auto-download` so the
+   benchmark itself never downloads the corpus during the scheduled run.
+
+The benchmark scripts keep their standalone auto-download path for ad hoc local
+debugging only. That fallback stages into `{session_entry_dir}/scratch` or a
+local scratch path and uses a stable Hugging Face cache to avoid re-fetching
+blobs across reruns, but it is not the nightly path.
+
+To run the checked-in audio setup before the benchmark session, pass
+`--config benchmarking/nightly-data-setup.yaml` alongside the main benchmark
+config to `benchmarking/tools/run.sh`. All supplied config files are merged
+before the setup entries verify and reuse existing staged data, or download and
+stage it into the configured paths before the nightly benchmark entries start.
+
+Current audio setup commands:
+
+```bash
+python benchmarking/data_prep/prepare_fleurs_data.py \
+  --output-path {datasets_path}/fleurs
+
+python benchmarking/data_prep/prepare_audio_tagging_data.py \
+  --output-path {datasets_path}/audio_tagging_ami_sdm \
+  --model-output-path {model_weights_path}/audio_tagging/pyannote-speaker-diarization-community-1
+```
+
+After preparation, the nightly YAML mounts `{datasets_path}/fleurs` as
+`fleurs_hy_am` and `{datasets_path}/audio_tagging_ami_sdm` as
+`audio_tagging_ami_sdm`. Both nightly benchmark commands pass `--no-auto-download`.
+
+---
+
+## Audio Tagging Benchmark
+
+The nightly entries process three real AMI single-distant-microphone meetings:
+about 1.25 hours of long, multi-speaker audio with overlap. Stage this corpus and
+the local PyAnnote diarization snapshot once on the benchmark machine:
+
+```bash
+python benchmarking/data_prep/prepare_audio_tagging_data.py \
+  --output-path /path/to/datasets/audio_tagging_ami_sdm \
+  --model-output-path /path/to/model_weights/audio_tagging/pyannote-speaker-diarization-community-1
+```
+
+The prep script does not take an HF token. By default it downloads the three
+benchmark AMI SDM meetings from `diarizers-community/ami` (`sdm` config,
+`test` split) and the local diarization snapshot from the token-free
+`pyannote-community/speaker-diarization-community-1` mirror. Override the
+defaults only when debugging with `--hf-repo-id`, `--ami-config`, `--ami-split`,
+or `--model-hf-repo-id`. If the PyAnnote snapshot already exists locally, pass
+`--model-source-path` to copy it instead of downloading the model files.
+Benchmark runs do not download or modify these staged inputs. The expected data
+layout is:
+
+```text
+{datasets_path}/audio_tagging_ami_sdm/
+|-- manifest.jsonl
+`-- audio/
+    |-- EN2002b.Array1-01.wav
+    |-- ES2004c.Array1-01.wav
+    `-- TS3003a.Array1-01.wav
+```
+
+`manifest.jsonl` must contain these three rows. `audio_item_id` must be unique
+and stable. The benchmark rewrites a per-run manifest from `--raw-data-dir` so
+`audio_filepath` points at `<raw-data-dir>/audio/<filename>` in the active
+environment rather than relying on hand-authored container paths:
+
+```jsonl
+{"audio_filepath":"/datasets/audio_tagging_ami_sdm/audio/EN2002b.Array1-01.wav","audio_item_id":"EN2002b.Array1-01"}
+{"audio_filepath":"/datasets/audio_tagging_ami_sdm/audio/ES2004c.Array1-01.wav","audio_item_id":"ES2004c.Array1-01"}
+{"audio_filepath":"/datasets/audio_tagging_ami_sdm/audio/TS3003a.Array1-01.wav","audio_item_id":"TS3003a.Array1-01"}
+```
+
+The model output directory must include `config.yaml` and its `segmentation/`,
+`embedding/`, and `plda/` artifacts. The diarization stage loads only this local
+snapshot and requires neither `HF_TOKEN` nor network access. Other model stages
+continue to use their standard NeMo and Torch cache locations.
+
+The benchmark executes the production tagging graph end to end: manifest read,
+optional row repetition, resampling, speaker diarization, long-audio splitting,
+first-pass ASR alignment, split metadata join, alignment/diarization merge,
+bandwidth and SQUIM metrics, TTS-segment preparation, second-pass ASR, WER, and
+manifest write. This follows the same split as the FLEURS benchmark: use the
+data-prep script for persistent nightly inputs, then run the benchmark with
+`--raw-data-dir` and `--no-auto-download`. Use the same pre-staged paths for a
+local benchmark run:
+
+```bash
+python benchmarking/scripts/audio_tagging_benchmark.py \
+  --benchmark-results-path /tmp/audio-tagging-results \
+  --scratch-output-path /tmp/audio-tagging-scratch \
+  --raw-data-dir /path/to/audio_tagging_ami_sdm \
+  --no-auto-download \
+  --diarization-model-path /path/to/pyannote-speaker-diarization-community-1 \
+  --executor xenna
+```
+
+On constrained local GPUs, disable ASR CUDA graphs and lower the model
+microbatches without changing the pipeline or its output checks:
+
+```bash
+python benchmarking/scripts/audio_tagging_benchmark.py \
+  --benchmark-results-path /tmp/audio-tagging-results \
+  --scratch-output-path /tmp/audio-tagging-scratch \
+  --raw-data-dir /path/to/audio_tagging_ami_sdm \
+  --no-auto-download \
+  --diarization-model-path /path/to/pyannote-speaker-diarization-community-1 \
+  --disable-cuda-graphs \
+  --asr-transcribe-batch-size 8 \
+  --squim-compute-batch-size 8 \
+  --diarization-segmentation-batch-size 16 \
+  --diarization-embedding-batch-size 16 \
+  --gpu-stage-num-workers 1 \
+  --cpu-stage-num-workers 1 \
+  --execution-mode batch \
+  --executor xenna
+```
+
+For ad hoc standalone debugging only, the benchmark also mirrors FLEURS'
+runtime auto-download fallback: if `--raw-data-dir` is omitted, it stages under
+`<scratch-output-path>/audio_tagging_ami_sdm`, reuses that staging if present,
+or downloads `manifest.jsonl` and the three `audio/*.wav` files from
+`--hf-repo-id` or `$CURATOR_AUDIO_TAGGING_HF_REPO_ID` with blobs cached under
+`--cache-dir`, `$CURATOR_AUDIO_TAGGING_CACHE_DIR`, or
+`/tmp/curator/audio_tagging_cache`. Nightly does not use this fallback.
+
+Every downstream stage preserves outer task rows, so success requires
+`input manifest rows * repeat factor == returned tasks == output manifest rows`.
+Nested segments may still be rejected when a model does not produce the fields
+needed by the following stage; those segments remain visible in the emitted and
+skipped metrics but do not count as successfully tagged output. Success also
+requires complete second-pass ASR and finite WER output, nonzero work from all
+12 measured processing stages, at least 70 percent segment-output coverage,
+and at least 1.2 source audio hours (2.4 for the repeated entry). The nightly
+configuration additionally requires at least 100 complete segments and 0.2
+tagged audio hours (200 segments and 0.4 hours for the repeated entry).
+
+---
+
 ## Writing Benchmark Scripts
 
 ### Script Location
@@ -422,7 +732,7 @@ Your script **must** write three JSON/pickle files to the `--benchmark-results-p
 ### Reference Implementations
 
 See existing scripts in `scripts/` for complete examples:
-- `alm_pipeline_benchmark.py` - ALM audio pipeline benchmark ([detailed docs](ALM_BENCHMARK.md))
+- `alm_pipeline_benchmark.py` - ALM audio pipeline benchmark
 - `domain_classification_benchmark.py` - Domain classification with model inference
 - `embedding_generation_benchmark.py` - Embedding generation benchmark
 - `removal_benchmark.py` - Data removal operations benchmark

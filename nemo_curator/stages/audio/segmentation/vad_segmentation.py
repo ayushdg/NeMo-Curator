@@ -47,7 +47,6 @@ from loguru import logger
 from silero_vad import get_speech_timestamps, load_silero_vad
 
 from nemo_curator.backends.base import WorkerMetadata
-from nemo_curator.backends.utils import RayStageSpecKeys
 from nemo_curator.stages.audio.common import ensure_waveform_2d, load_audio_file
 from nemo_curator.stages.base import ProcessingStage
 from nemo_curator.stages.resources import Resources
@@ -104,12 +103,12 @@ class VADSegmentationStage(ProcessingStage[AudioTask, AudioTask]):
         return [], []
 
     def outputs(self) -> tuple[list[str], list[str]]:
-        return [], ["waveform", "sample_rate", "start_ms", "end_ms", "segment_num", "duration_sec"]
+        return [], ["waveform", "sample_rate", "start_ms", "end_ms", "segment_num", "duration"]
 
     def ray_stage_spec(self) -> dict[str, Any]:
         if self.nested:
             return {}
-        return {RayStageSpecKeys.IS_FANOUT_STAGE: True}
+        return super().ray_stage_spec()
 
     def setup(self, _: WorkerMetadata | None = None) -> None:
         self._initialize_model()
@@ -183,7 +182,6 @@ class VADSegmentationStage(ProcessingStage[AudioTask, AudioTask]):
                 "start_ms",
                 "end_ms",
                 "segment_num",
-                "duration_sec",
                 "duration",
                 "num_samples",
             )
@@ -195,7 +193,7 @@ class VADSegmentationStage(ProcessingStage[AudioTask, AudioTask]):
                 "start_ms": start_ms,
                 "end_ms": end_ms,
                 "segment_num": segment_num,
-                "duration_sec": (end_ms - start_ms) / 1000.0,
+                "duration": (end_ms - start_ms) / 1000.0,
                 "original_file": item.get("original_file", item.get("audio_filepath", "unknown")),
             }
         )
@@ -273,7 +271,6 @@ class VADSegmentationStage(ProcessingStage[AudioTask, AudioTask]):
                 seg_data = self._build_segment_item(task.data, waveform, sample_rate, segment, i)
                 seg_task = AudioTask(
                     data=seg_data,
-                    task_id=f"{task.task_id}_seg_{i}",
                     dataset_name=task.dataset_name,
                 )
                 if task._metadata:

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG CUDA_VER=12.8.1
+ARG CUDA_VER=12.9.1
 ARG LINUX_VER=ubuntu24.04
 
 FROM nvidia/cuda:${CUDA_VER}-cudnn-devel-${LINUX_VER} AS cuda
@@ -34,36 +34,43 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 ENV DEBIAN_FRONTEND=noninteractive
 # gnupg upgrade Address CVE-2025-68973
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.12-dev \
-    python3 \
-    python3-dev \
-    python3-venv \
-    python-is-python3\
+    software-properties-common \
     curl \
     git \
+    libmagic1t64 \
     vim && \
-    apt-get install -y --only-upgrade gnupg && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    python3.13 \
+    python3.13-dev \
+    python3.13-venv \
+    python-is-python3 && \
+    apt-get install -y --only-upgrade gnupg libunbound8 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
 
 # Install uv
-ENV UV_VERSION="0.8.22"
+ENV UV_VERSION="0.12.1"
 RUN curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 ENV UV_CACHE_DIR=/opt/uv_cache
 ENV PATH="$UV_PROJECT_ENVIRONMENT/bin:$PATH"
 ENV UV_LINK_MODE=copy
-RUN uv venv ${UV_PROJECT_ENVIRONMENT} --system-site-packages --seed
+RUN uv venv ${UV_PROJECT_ENVIRONMENT} --python /usr/bin/python3.13 --system-site-packages --seed
 
 FROM build AS nemo_curator_dep
 
-# Install FFmpeg
-COPY docker/common/install_ffmpeg.sh .
-RUN bash install_ffmpeg.sh && \
-    rm install_ffmpeg.sh
+# Install etcd + nats-server (required by the Dynamo inference backend)
+COPY docker/common/install_etcd_nats.sh .
+RUN bash install_etcd_nats.sh && \
+    rm install_etcd_nats.sh
+
+# Use the ray-haproxy wheel so Ray Serve's HAProxy ingress mode can discover
+# the packaged binary without compiling HAProxy in the image.
+ENV RAY_SERVE_EXPERIMENTAL_PIP_HAPROXY=1
 
 
 FROM nemo_curator_dep AS nemo_curator
@@ -89,29 +96,19 @@ RUN if [ -n "${CURATOR_EXTRA}" ]; then \
     find /opt/venv -name "ray_dist.jar" -delete && \
     if find /opt/venv -name "ray_dist.jar" | grep -q .; then \
         echo "ERROR: GHSA-72hv-8253-57qq not fixed — ray_dist.jar still present after deletion" && exit 1; \
-    fi
+    fi && \
+    # Strip opencv-python-headless (ffmpeg CVE carrier); tolerate arm64 where vllm doesn't pull it.
+    (uv pip uninstall opencv-python-headless || true)
 
-# Patch wandb-core: bump google.golang.org/grpc from 1.79.2 to 1.79.3 (CVE fix)
-ARG TARGETARCH
-RUN if python3 -c "import wandb" 2>/dev/null; then \
-        GRPC_VERSION=1.79.3 && \
-        GO_VERSION=1.26.1 && \
-        WANDB_VERSION=$(python3 -c "import wandb; print(wandb.__version__)") && \
-        WANDB_CORE_BIN=/opt/venv/lib/python3.12/site-packages/wandb/bin/wandb-core && \
-        curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" | tar -C /tmp -xz && \
-        export PATH="/tmp/go/bin:$PATH" && \
-        export GOPATH=/tmp/gopath && \
-        git clone --depth 1 --branch "v${WANDB_VERSION}" https://github.com/wandb/wandb.git /tmp/wandb-src && \
-        cd /tmp/wandb-src/core && \
-        go get google.golang.org/grpc@v${GRPC_VERSION} && \
-        go mod tidy && \
-        go mod vendor && \
-        CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" \
-            -o "${WANDB_CORE_BIN}" ./cmd/wandb-core/ && \
-        rm -rf /tmp/wandb-src /tmp/go /tmp/gopath; \
-    else \
-        echo "wandb not installed, skipping CVE patch"; \
-    fi
+# Install nemotron-ocr (C++/CUDA extension — requires no-build-isolation)
+# GIT_LFS_SKIP_SMUDGE=1: clone source only, model weights are mounted at runtime
+# TORCH_CUDA_ARCH_LIST: compile for SM 8.0/8.6/8.9/9.0 to cover A100, A10, RTX Ada, H100
+ARG NEMOTRON_OCR_REV=86cacb0467fa4f7ce54342fdb250825e0d928ae7
+RUN uv pip install hatchling ninja editables && \
+    GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/nvidia/nemotron-ocr-v2 /tmp/nemotron-ocr-src && \
+    git -C /tmp/nemotron-ocr-src checkout "${NEMOTRON_OCR_REV}" && \
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" uv pip install --no-build-isolation /tmp/nemotron-ocr-src/nemotron-ocr && \
+    rm -rf /tmp/nemotron-ocr-src
 
 COPY . /opt/Curator
 

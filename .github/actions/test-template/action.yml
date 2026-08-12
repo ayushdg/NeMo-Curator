@@ -35,19 +35,6 @@ inputs:
     description: "Run tests on CPU only"
     required: false
     default: "false"
-  azure-client-id:
-    description: "Azure Client ID"
-    required: true
-  azure-tenant-id:
-    description: "Azure Tenant ID"
-    required: true
-  azure-subscription-id:
-    description: "Azure Subscription ID"
-    required: true
-  has-azure-credentials:
-    description: "Has Azure credentials"
-    required: false
-    default: "false"
   HF_TOKEN:
     description: "Hugging Face Token"
     required: true
@@ -74,30 +61,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Install Azure CLI
-      if: ${{ inputs.has-azure-credentials == 'true' }}
-      shell: bash
-      run: |
-        for i in 1 2 3; do
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash && break
-          echo "Attempt $i failed, retrying in 10s..."
-          sleep 10
-        done
-
-    - name: Azure Login
-      if: ${{ inputs.has-azure-credentials == 'true' }}
-      uses: azure/login@v2
-      with:
-        client-id: ${{ inputs.azure-client-id }}
-        tenant-id: ${{ inputs.azure-tenant-id }}
-        subscription-id: ${{ inputs.azure-subscription-id }}
-
-    - name: Azure ACR Login
-      if: ${{ inputs.has-azure-credentials == 'true' }}
-      shell: bash
-      run: |
-        az acr login --name nemoci
-
     - name: Install uuidgen
       shell: bash -x -e -u -o pipefail {0}
       if: ${{ contains(inputs.runner, 'aws') }}
@@ -113,8 +76,6 @@ runs:
       env:
         HF_TOKEN: ${{ inputs.HF_TOKEN }}
       run: |
-        MNT_PATH=${{ steps.azure-fileshare.outputs.mnt_path }}
-
         ARG=("")
         if [[ "${{ inputs.cpu-only }}" == "false" ]]; then
           ARG=("--runtime=nvidia --gpus all")
@@ -130,6 +91,7 @@ runs:
           --shm-size=64g \
           --env HF_TOKEN=${HF_TOKEN} \
           --env RUN_ID=${{ github.run_id }} \
+          --env UV_HTTP_TIMEOUT=${UV_HTTP_TIMEOUT:-60} \
           --workdir /opt/Curator \
           --volume ${{ inputs.test-data-path }}:/home/TestData \
           ${{ inputs.container-image }} \
@@ -166,7 +128,7 @@ runs:
         echo "$cmd" | tee "job.sh"
 
     - name: Run main script
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
       id: run-main-script
       with:
         timeout_seconds: ${{ steps.create.outputs.timeout_in_seconds }}
@@ -209,7 +171,7 @@ runs:
         docker exec -t nemo_container_${{ github.run_id }} bash -c 'cd /opt/Curator && coverage report -i'
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
       if: ${{ steps.check.outputs.coverage_report != 'none' }}
       with:
         name: ${{ steps.check.outputs.coverage_report }}
