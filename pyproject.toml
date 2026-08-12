@@ -357,7 +357,6 @@ override-dependencies = [
     "huggingface-hub>=0.34,<1.0", # Override huggingface-hub, transformers and data-designer require two different versions of hugging-face hub
     "kaldiio;  sys_platform == 'never'",
     "levenshtein;  sys_platform == 'never'",
-    "numpy>=2.0.0,<=2.2.0", # Override nemo-toolkits constraint of <2.0.0, upperbounds for Numba compatibility
     "numba==0.65.0", # Override RAPIDS/legacy caps for the inference image; vLLM 0.22 requires numba 0.65.0
     "protobuf>=5.29.5,<7.0",  # Override nemo-toolkits constraint of ~=5.29.5; <7.0 due to ray serve FieldDescriptor API breakage
     "setuptools>=80.10.1", # Override setuptools range in other dependencies to address CVE GHSA-58pv-8j8x-9vj2
