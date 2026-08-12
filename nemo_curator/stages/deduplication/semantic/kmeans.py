@@ -208,7 +208,7 @@ class KMeansReadFitWriteStage(ProcessingStage[FileGroupTask, EmptyTask], Dedupli
 
         # Fit the model cooperatively across actors, then predict on local data
         concatenated_embeddings = cp.concatenate(embeddings_arrays, axis=0)
-        self.kmeans.fit(concatenated_embeddings, sample_weight=None, convert_dtype=False, multigpu=True)
+        self.kmeans.fit(concatenated_embeddings, sample_weight=None, convert_dtype=False)
 
         if self.cache_path is not None and getattr(self, "_actor_index", 0) == 0:
             os.makedirs(self.cache_path, exist_ok=True)
@@ -350,7 +350,7 @@ class KMeansReadFitWriteStage(ProcessingStage[FileGroupTask, EmptyTask], Dedupli
             f"(fit_data_fraction={fraction:.4f}, {len(fit_files)}/{len(all_files)} files)"
         )
 
-        self.kmeans._fit(concatenated_samples, sample_weight=None, convert_dtype=False, multigpu=True)
+        self.kmeans.fit(concatenated_samples, sample_weight=None, convert_dtype=False)
         del concatenated_samples
         gc.collect()
         # Stop the fit-time clock before centroid I/O so the metric isn't skewed
