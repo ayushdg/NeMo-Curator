@@ -357,12 +357,12 @@ entries:
       --input-path={dataset:rpv2-2023-14-en,parquet}
       --output-path={session_entry_dir}/scratch/output
       --executor=ray_actors
-      --dataset-size-ratio=0.25
+      --dataset-size-ratio=1
       --input-task-type=FileGroupTask
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 180
+    timeout_s: 720
     sink_data:
       - name: slack
         additional_metrics:
@@ -397,12 +397,12 @@ entries:
       --input-path={dataset:rpv2-2023-14-en,parquet}
       --output-path={session_entry_dir}/scratch/output
       --executor=xenna
-      --dataset-size-ratio=0.25
+      --dataset-size-ratio=1
       --input-task-type=FileGroupTask
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 180
+    timeout_s: 720
     sink_data:
       - name: slack
         additional_metrics:
@@ -437,12 +437,12 @@ entries:
       --input-path={dataset:rpv2-2023-14-en,parquet}
       --output-path={session_entry_dir}/scratch/output
       --executor=ray_data
-      --dataset-size-ratio=0.25
+      --dataset-size-ratio=1
       --input-task-type=FileGroupTask
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 180
+    timeout_s: 720
     sink_data:
       - name: slack
         additional_metrics:
@@ -477,12 +477,12 @@ entries:
       --input-path={dataset:rpv2-2023-14-en,parquet}
       --output-path={session_entry_dir}/scratch/output
       --executor=xenna
-      --dataset-size-ratio=0.25
+      --dataset-size-ratio=1
       --input-task-type=DocumentBatch
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 300
+    timeout_s: 1200
     sink_data:
       - name: slack
         additional_metrics:
@@ -517,12 +517,12 @@ entries:
       --input-path={dataset:rpv2-2023-14-en,parquet}
       --output-path={session_entry_dir}/scratch/output
       --executor=ray_data
-      --dataset-size-ratio=0.25
+      --dataset-size-ratio=1
       --input-task-type=DocumentBatch
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 500
+    timeout_s: 2000
     sink_data:
       - name: slack
         additional_metrics:
@@ -557,13 +557,13 @@ entries:
       --input-path={dataset:rpv2-2023-14-en,parquet}
       --output-path={session_entry_dir}/scratch/output
       --executor=ray_data
-      --dataset-size-ratio=0.25
+      --dataset-size-ratio=1
       --input-task-type=DocumentBatch
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
       --minhash-num-workers=8
-    timeout_s: 500
+    timeout_s: 2000
     sink_data:
       - name: slack
         additional_metrics:
