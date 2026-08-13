@@ -362,7 +362,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 720
+    timeout_s: 512
     sink_data:
       - name: slack
         additional_metrics:
@@ -375,9 +375,9 @@ entries:
           - UBDSVEQPL  # Ayush Dattagupta
     requirements:
       - metric: num_documents_processed
-        exact_value: 174163347
+        exact_value: 1046344809
       - metric: throughput_docs_per_sec
-        min_value: 1300000
+        min_value: 2000000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
         max_value: 0.24
@@ -387,7 +387,7 @@ entries:
         max_value: 0.35
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.26
+        max_value: 0.35
 
   - name: minhash_file_group_task_xenna
     enabled: false
@@ -402,7 +402,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 720
+    timeout_s: 512
     sink_data:
       - name: slack
         additional_metrics:
@@ -415,9 +415,9 @@ entries:
           - UBDSVEQPL  # Ayush Dattagupta
     requirements:
       - metric: num_documents_processed
-        exact_value: 174163347
+        exact_value: 1046344809
       - metric: throughput_docs_per_sec
-        min_value: 1300000
+        min_value: 2000000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
         max_value: 0.24
@@ -427,7 +427,7 @@ entries:
         max_value: 0.35
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.26
+        max_value: 0.35
 
   - name: minhash_file_group_task_ray_data
     enabled: false
@@ -442,7 +442,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 720
+    timeout_s: 512
     sink_data:
       - name: slack
         additional_metrics:
@@ -455,9 +455,9 @@ entries:
           - UBDSVEQPL  # Ayush Dattagupta
     requirements:
       - metric: num_documents_processed
-        exact_value: 174163347
+        exact_value: 1046344809
       - metric: throughput_docs_per_sec
-        min_value: 1300000
+        min_value: 2000000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
         max_value: 0.24
@@ -467,7 +467,7 @@ entries:
         max_value: 0.35
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.26
+        max_value: 0.35
 
   - name: minhash_document_batch_xenna
     enabled: true
@@ -482,7 +482,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 1200
+    timeout_s: 620
     sink_data:
       - name: slack
         additional_metrics:
@@ -495,9 +495,9 @@ entries:
           - UBDSVEQPL  # Ayush Dattagupta
     requirements:
       - metric: num_documents_processed
-        exact_value: 174163347
+        exact_value: 1046344809
       - metric: throughput_docs_per_sec
-        min_value: 700000
+        min_value: 1600000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
         max_value: 0.24
@@ -507,7 +507,7 @@ entries:
         max_value: 0.18
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.26
+        max_value: 0.35
 
   - name: minhash_document_batch_ray_data
     enabled: true
@@ -522,7 +522,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 2000
+    timeout_s: 1400
     sink_data:
       - name: slack
         additional_metrics:
@@ -535,9 +535,9 @@ entries:
           - UBDSVEQPL  # Ayush Dattagupta
     requirements:
       - metric: num_documents_processed
-        exact_value: 174163347
+        exact_value: 1046344809
       - metric: throughput_docs_per_sec
-        min_value: 500000
+        min_value: 800000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
         max_value: 0.24
@@ -547,7 +547,7 @@ entries:
         max_value: 0.18
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.26
+        max_value: 0.35
 
   - name: minhash_document_batch_ray_data_num_workers_8
     enabled: true
@@ -563,7 +563,7 @@ entries:
       --blocksize=512MiB
       --text-field=raw_content
       --minhash-num-workers=8
-    timeout_s: 2000
+    timeout_s: 1400
     sink_data:
       - name: slack
         additional_metrics:
@@ -576,9 +576,9 @@ entries:
           - UBDSVEQPL  # Ayush Dattagupta
     requirements:
       - metric: num_documents_processed
-        exact_value: 174163347
+        exact_value: 1046344809
       - metric: throughput_docs_per_sec
-        min_value: 500000
+        min_value: 800000
       - metric: minhash_compute_worker_time_s_mean
         min_value: 0.12
         max_value: 0.24
@@ -588,7 +588,7 @@ entries:
         max_value: 0.18
       - metric: minhash_write_worker_time_s_mean
         min_value: 0.12
-        max_value: 0.26
+        max_value: 0.35
 
   - name: semdedup_identification_xenna
     enabled: true
