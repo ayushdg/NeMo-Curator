@@ -510,7 +510,7 @@ entries:
         max_value: 0.35
 
   - name: minhash_document_batch_ray_data
-    enabled: true
+    enabled: false
     script: minhash_benchmark.py
     args: >-
       --benchmark-results-path={session_entry_dir}
