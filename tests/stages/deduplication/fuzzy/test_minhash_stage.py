@@ -241,6 +241,7 @@ class TestMinHashStage:
             output_path=str(tmp_path / "output"),
             text_field="text",  # This column doesn't exist
             pool=False,
+            read_format="jsonl",
         )
 
         stage.setup()
@@ -264,6 +265,7 @@ class TestMinHashStage:
             output_path=str(tmp_path / "output"),
             text_field="text",
             pool=False,
+            read_format="jsonl",
         )
 
         stage.setup()
@@ -275,6 +277,7 @@ class TestMinHashStage:
         stage = MinHashStage(
             output_path=str(tmp_path),
             text_field="text",
+            read_format="jsonl",
         )
 
         input_task = FileGroupTask(dataset_name="test_dataset", data=["dummy.jsonl"], _metadata={})
@@ -309,6 +312,7 @@ class TestMinHashStage:
             num_hashes=128,
             char_ngrams=5,
             pool=False,
+            read_format="jsonl",
         )
 
         stage.setup()
@@ -349,6 +353,7 @@ class TestMinHashStage:
             num_hashes=64,
             char_ngrams=3,
             pool=False,
+            read_format="jsonl",
         )
 
         stage.setup()
@@ -379,6 +384,7 @@ class TestMinHashStage:
             output_path=str(tmp_path / "output1"),
             text_field="text",
             pool=False,
+            read_format="jsonl",
         )
 
         input_file1 = tmp_path / "test1.jsonl"
@@ -404,6 +410,7 @@ class TestMinHashStage:
             output_path=str(tmp_path / "output2"),
             text_field="text",
             pool=False,
+            read_format="jsonl",
         )
 
         # Setup second stage - should reuse the same ID generator actor
