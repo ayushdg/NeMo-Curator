@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -291,6 +292,12 @@ class MinHashStage(ProcessingStage[FileGroupTask | DocumentBatch, FileGroupTask]
             use_64bit_hash=self.use_64bit_hash,
             pool=self.pool,
         )
+
+    def teardown(self) -> None:
+        self.minhash_processor = None
+        gc.collect()
+        if self.pool:
+            rmm.reinitialize(pool_allocator=False)
 
     def inputs(self) -> StageInputSpecs:
         """Define input requirements for each supported input task type."""
