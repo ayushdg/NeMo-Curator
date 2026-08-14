@@ -162,7 +162,6 @@ class TestMinHashStage:
         stage.setup()
         assert stage.validate_input(input_task) is True
         output_task = stage.process(input_task)
-
         # The input-preparation metric identifies which input path ran.
         if isinstance(input_task, DocumentBatch):
             input_prep_metric = "minhash_document_batch_to_cudf_time"
@@ -174,11 +173,8 @@ class TestMinHashStage:
         assert unused_input_prep_metric not in stage._custom_metrics
 
         # Verify detailed stage timings are recorded
-        assert all(
-            stage._custom_metrics[metric] > 0
-            for metric in ("minhash_compute_time", "minhash_write_time")
-        )
-
+        assert all(stage._custom_metrics[metric] > 0 for metric in ("minhash_compute_time", "minhash_write_time"))
+        stage.teardown()
         # Verify output task structure (output is always a FileGroupTask)
         assert isinstance(output_task, FileGroupTask)
         assert len(output_task.data) == 1
@@ -249,6 +245,7 @@ class TestMinHashStage:
         # Should raise KeyError for missing column
         with pytest.raises(KeyError):
             stage.process(input_task)
+        stage.teardown()
 
     @pytest.mark.usefixtures("ray_client_with_id_generator")
     def test_empty_input_handling(self, tmp_path: Path) -> None:
@@ -271,6 +268,7 @@ class TestMinHashStage:
         stage.setup()
         with pytest.raises(KeyError):
             stage.process(input_task)
+        stage.teardown()
 
     def test_process_without_setup(self, tmp_path: Path) -> None:
         """Test that process raises error if setup wasn't called."""
@@ -317,7 +315,7 @@ class TestMinHashStage:
 
         stage.setup()
         output_task = stage.process(input_task)
-
+        stage.teardown()
         # Verify all documents were processed
         result_df = cudf.read_parquet(output_task.data[0])
         assert len(result_df) == 4
@@ -358,7 +356,7 @@ class TestMinHashStage:
 
         stage.setup()
         output_task = stage.process(input_task)
-
+        stage.teardown()
         # Verify all documents were processed
         result_df = cudf.read_parquet(output_task.data[0])
         assert len(result_df) == 5
@@ -399,7 +397,7 @@ class TestMinHashStage:
         stage1.setup()
         first_id_generator = stage1.id_generator
         output_task1 = stage1.process(input_task1)
-
+        stage1.teardown()
         # Read first batch results and get IDs
         result_df1 = cudf.read_parquet(output_task1.data[0])
         ids_batch1 = sorted(result_df1[CURATOR_DEDUP_ID_STR].to_pandas().tolist())
@@ -417,7 +415,7 @@ class TestMinHashStage:
         stage2.setup()
         second_id_generator = stage2.id_generator
         output_task2 = stage2.process(input_task2)
-
+        stage2.teardown()
         # ID generators should be the same Ray actor
         assert first_id_generator == second_id_generator
 
@@ -500,7 +498,7 @@ class TestMinHashStage:
         # Simulate a missing IdGenerator actor; the DocumentBatch path must not need it.
         stage.id_generator = None
         output_task = stage.process(task)
-
+        stage.teardown()
         result_df = cudf.read_parquet(output_task.data[0])
         assert len(result_df) == 5
         assert result_df[CURATOR_DEDUP_ID_STR].to_pandas().tolist() == [10, 11, 12, 13, 14]
@@ -523,6 +521,7 @@ class TestMinHashStage:
         stage.id_generator = None  # simulate missing actor
         with pytest.raises(RuntimeError, match="IdGenerator actor is required"):
             stage.process(task)
+        stage.teardown()
 
     @pytest.mark.usefixtures("shared_ray_client")
     def test_setup_tolerates_missing_id_generator(self, tmp_path: Path) -> None:
@@ -536,6 +535,7 @@ class TestMinHashStage:
         stage = MinHashStage(output_path=str(tmp_path / "no_actor"), text_field="text", pool=False)
         stage.setup()
         assert stage.id_generator is None
+        stage.teardown()
 
     @pytest.mark.usefixtures("ray_client_with_id_generator")
     def test_read_format_none_ok_for_document_batch(self, batch_dataframe: pd.DataFrame, tmp_path: Path) -> None:
@@ -553,6 +553,7 @@ class TestMinHashStage:
         output_task = stage.process(task)
         result_df = cudf.read_parquet(output_task.data[0])
         assert len(result_df) == 5
+        stage.teardown()
 
     @pytest.mark.usefixtures("ray_client_with_id_generator")
     def test_read_format_warns_for_document_batch(
@@ -575,6 +576,7 @@ class TestMinHashStage:
         with caplog.at_level("WARNING"):
             stage.process(task)
         assert "read_format='jsonl' is ignored for DocumentBatch inputs" in caplog.text
+        stage.teardown()
 
     @pytest.mark.usefixtures("ray_client_with_id_generator")
     def test_read_format_none_raises_for_filegroup(self, tmp_path: Path) -> None:
@@ -589,3 +591,4 @@ class TestMinHashStage:
         with pytest.raises(ValueError, match="read_format must be 'jsonl' or 'parquet'"):
             stage.process(task)
         assert stage.minhash_processor is not None
+        stage.teardown()
