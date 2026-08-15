@@ -352,9 +352,248 @@ entries:
 
     requirements:
       - metric: num_duplicates
-        # 59,226,133 is expected, ensure +/- 1%
-        min_value: 58633871
-        max_value: 59818394
+        exact_value: 59226133
+
+  - name: minhash_file_group_task_ray_actors
+    enabled: true
+    script: minhash_benchmark.py
+    args: >-
+      --benchmark-results-path={session_entry_dir}
+      --input-path={dataset:rpv2-2023-14-en,parquet}
+      --output-path={session_entry_dir}/scratch/output
+      --executor=ray_actors
+      --dataset-size-ratio=1
+      --input-task-type=FileGroupTask
+      --input-filetype=parquet
+      --blocksize=512MiB
+      --text-field=raw_content
+    timeout_s: 512
+    sink_data:
+      - name: slack
+        additional_metrics:
+          - num_documents_processed
+          - throughput_docs_per_sec
+          - minhash_input_prep_worker_time_s_mean
+          - minhash_compute_worker_time_s_mean
+          - minhash_write_worker_time_s_mean
+        ping_on_failure:
+          - UBDSVEQPL  # Ayush Dattagupta
+    requirements:
+      - metric: num_documents_processed
+        exact_value: 1046344809
+      - metric: throughput_docs_per_sec
+        min_value: 2000000
+      - metric: minhash_compute_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.24
+      # FileGroupTask input prep measures cuDF reading the source files.
+      - metric: minhash_input_prep_worker_time_s_mean
+        min_value: 0.22
+        max_value: 0.35
+      - metric: minhash_write_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.35
+
+  - name: minhash_file_group_task_xenna
+    enabled: false
+    script: minhash_benchmark.py
+    args: >-
+      --benchmark-results-path={session_entry_dir}
+      --input-path={dataset:rpv2-2023-14-en,parquet}
+      --output-path={session_entry_dir}/scratch/output
+      --executor=xenna
+      --dataset-size-ratio=1
+      --input-task-type=FileGroupTask
+      --input-filetype=parquet
+      --blocksize=512MiB
+      --text-field=raw_content
+    timeout_s: 512
+    sink_data:
+      - name: slack
+        additional_metrics:
+          - num_documents_processed
+          - throughput_docs_per_sec
+          - minhash_input_prep_worker_time_s_mean
+          - minhash_compute_worker_time_s_mean
+          - minhash_write_worker_time_s_mean
+        ping_on_failure:
+          - UBDSVEQPL  # Ayush Dattagupta
+    requirements:
+      - metric: num_documents_processed
+        exact_value: 1046344809
+      - metric: throughput_docs_per_sec
+        min_value: 2000000
+      - metric: minhash_compute_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.24
+      # FileGroupTask input prep measures cuDF reading the source files.
+      - metric: minhash_input_prep_worker_time_s_mean
+        min_value: 0.22
+        max_value: 0.35
+      - metric: minhash_write_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.35
+
+  - name: minhash_file_group_task_ray_data
+    enabled: false
+    script: minhash_benchmark.py
+    args: >-
+      --benchmark-results-path={session_entry_dir}
+      --input-path={dataset:rpv2-2023-14-en,parquet}
+      --output-path={session_entry_dir}/scratch/output
+      --executor=ray_data
+      --dataset-size-ratio=1
+      --input-task-type=FileGroupTask
+      --input-filetype=parquet
+      --blocksize=512MiB
+      --text-field=raw_content
+    timeout_s: 512
+    sink_data:
+      - name: slack
+        additional_metrics:
+          - num_documents_processed
+          - throughput_docs_per_sec
+          - minhash_input_prep_worker_time_s_mean
+          - minhash_compute_worker_time_s_mean
+          - minhash_write_worker_time_s_mean
+        ping_on_failure:
+          - UBDSVEQPL  # Ayush Dattagupta
+    requirements:
+      - metric: num_documents_processed
+        exact_value: 1046344809
+      - metric: throughput_docs_per_sec
+        min_value: 2000000
+      - metric: minhash_compute_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.24
+      # FileGroupTask input prep measures cuDF reading the source files.
+      - metric: minhash_input_prep_worker_time_s_mean
+        min_value: 0.22
+        max_value: 0.35
+      - metric: minhash_write_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.35
+
+  - name: minhash_document_batch_xenna
+    enabled: true
+    script: minhash_benchmark.py
+    args: >-
+      --benchmark-results-path={session_entry_dir}
+      --input-path={dataset:rpv2-2023-14-en,parquet}
+      --output-path={session_entry_dir}/scratch/output
+      --executor=xenna
+      --dataset-size-ratio=1
+      --input-task-type=DocumentBatch
+      --input-filetype=parquet
+      --blocksize=512MiB
+      --text-field=raw_content
+    timeout_s: 620
+    sink_data:
+      - name: slack
+        additional_metrics:
+          - num_documents_processed
+          - throughput_docs_per_sec
+          - minhash_input_prep_worker_time_s_mean
+          - minhash_compute_worker_time_s_mean
+          - minhash_write_worker_time_s_mean
+        ping_on_failure:
+          - UBDSVEQPL  # Ayush Dattagupta
+    requirements:
+      - metric: num_documents_processed
+        exact_value: 1046344809
+      - metric: throughput_docs_per_sec
+        min_value: 1600000
+      - metric: minhash_compute_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.24
+      # DocumentBatch input prep measures host-to-device transfer.
+      - metric: minhash_input_prep_worker_time_s_mean
+        min_value: 0.08
+        max_value: 0.18
+      - metric: minhash_write_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.35
+
+  - name: minhash_document_batch_ray_data
+    enabled: true
+    script: minhash_benchmark.py
+    args: >-
+      --benchmark-results-path={session_entry_dir}
+      --input-path={dataset:rpv2-2023-14-en,parquet}
+      --output-path={session_entry_dir}/scratch/output
+      --executor=ray_data
+      --dataset-size-ratio=1
+      --input-task-type=DocumentBatch
+      --input-filetype=parquet
+      --blocksize=512MiB
+      --text-field=raw_content
+    timeout_s: 1400
+    sink_data:
+      - name: slack
+        additional_metrics:
+          - num_documents_processed
+          - throughput_docs_per_sec
+          - minhash_input_prep_worker_time_s_mean
+          - minhash_compute_worker_time_s_mean
+          - minhash_write_worker_time_s_mean
+        ping_on_failure:
+          - UBDSVEQPL  # Ayush Dattagupta
+    requirements:
+      - metric: num_documents_processed
+        exact_value: 1046344809
+      - metric: throughput_docs_per_sec
+        min_value: 800000
+      - metric: minhash_compute_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.24
+      # DocumentBatch input prep measures host-to-device transfer.
+      - metric: minhash_input_prep_worker_time_s_mean
+        min_value: 0.08
+        max_value: 0.18
+      - metric: minhash_write_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.35
+
+  - name: minhash_document_batch_ray_data_num_workers_8
+    enabled: false
+    script: minhash_benchmark.py
+    args: >-
+      --benchmark-results-path={session_entry_dir}
+      --input-path={dataset:rpv2-2023-14-en,parquet}
+      --output-path={session_entry_dir}/scratch/output
+      --executor=ray_data
+      --dataset-size-ratio=1
+      --input-task-type=DocumentBatch
+      --input-filetype=parquet
+      --blocksize=512MiB
+      --text-field=raw_content
+      --minhash-num-workers=8
+    timeout_s: 1400
+    sink_data:
+      - name: slack
+        additional_metrics:
+          - num_documents_processed
+          - throughput_docs_per_sec
+          - minhash_input_prep_worker_time_s_mean
+          - minhash_compute_worker_time_s_mean
+          - minhash_write_worker_time_s_mean
+        ping_on_failure:
+          - UBDSVEQPL  # Ayush Dattagupta
+    requirements:
+      - metric: num_documents_processed
+        exact_value: 1046344809
+      - metric: throughput_docs_per_sec
+        min_value: 800000
+      - metric: minhash_compute_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.24
+      # DocumentBatch input prep measures host-to-device transfer.
+      - metric: minhash_input_prep_worker_time_s_mean
+        min_value: 0.08
+        max_value: 0.18
+      - metric: minhash_write_worker_time_s_mean
+        min_value: 0.12
+        max_value: 0.35
 
   - name: semdedup_identification_xenna_dataset_size_ratio
     enabled: true
