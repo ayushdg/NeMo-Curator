@@ -1154,7 +1154,7 @@ entries:
       --model-dir={dataset:videos_model_weights,files}
       --video-limit=4000
       --transcode-encoder=libopenh264
-    timeout_s: 900
+    timeout_s: 1800
     sink_data:
       - name: slack
         ping_on_failure:
@@ -1163,9 +1163,9 @@ entries:
     requirements:
       # ensure the total number of documents processed is correct
       - metric: num_clips_generated
-        exact_value: 5602
+        exact_value: 7600
       - metric: throughput_clips_per_sec
-        min_value: 8.0
+        min_value: 12.0
 
   - name: video_embedding_raydata
     enabled: true
@@ -1187,9 +1187,9 @@ entries:
     requirements:
       # ensure the total number of documents processed is correct
       - metric: num_clips_generated
-        exact_value: 5602
+        exact_value: 7600
       - metric: throughput_clips_per_sec
-        min_value: 4.0
+        min_value: 12.0
 
   - name: video_transcoding_xenna
     enabled: true
@@ -1212,9 +1212,9 @@ entries:
     requirements:
       # ensure the total number of documents processed is correct
       - metric: num_clips_generated
-        exact_value: 5602
+        exact_value: 7600
       - metric: throughput_clips_per_sec
-        min_value: 5.0
+        min_value: 15.5
 
   - name: video_transcoding_raydata
     enabled: true
@@ -1237,9 +1237,9 @@ entries:
     requirements:
       # ensure the total number of documents processed is correct
       - metric: num_clips_generated
-        exact_value: 5602
+        exact_value: 7600
       - metric: throughput_clips_per_sec
-        min_value: 3.0
+        min_value: 17.5
 
   - name: video_captioning_xenna
     enabled: true
@@ -1264,9 +1264,9 @@ entries:
     requirements:
       # ensure the total number of documents processed is correct
       - metric: num_clips_generated
-        exact_value: 722
+        exact_value: 1013
       - metric: throughput_clips_per_sec
-        min_value: 0.5
+        min_value: 0.85
 
   - name: video_captioning_raydata
     enabled: true
@@ -1291,9 +1291,9 @@ entries:
     requirements:
       # ensure the total number of documents processed is correct
       - metric: num_clips_generated
-        exact_value: 722
+        exact_value: 1013
       - metric: throughput_clips_per_sec
-        min_value: 0.5
+        min_value: 0.7
 
   - name: ndd_dynamo_dp8
     enabled: true
@@ -1380,7 +1380,7 @@ entries:
       --motion-filter=enable
       --aesthetic-threshold=3.5
       --transnetv2-frame-decoder-mode ffmpeg_cpu
-      --video-limit=3000
+      --video-limit=4000
       --transcode-encoder=libopenh264
     timeout_s: 1800
     sink_data:
@@ -1391,9 +1391,9 @@ entries:
     requirements:
       # ensure the total number of documents processed is correct
       - metric: num_clips_generated
-        exact_value: 308
+        exact_value: 526
       - metric: throughput_clips_per_sec
-        min_value: 0.25
+        min_value: 0.75
 
   - name: video_transnetv2_motion_aesthetic_filter_embeddings_raydata
     enabled: true
@@ -1408,7 +1408,7 @@ entries:
       --motion-filter=enable
       --aesthetic-threshold=3.5
       --transnetv2-frame-decoder-mode ffmpeg_cpu
-      --video-limit=3000
+      --video-limit=4000
       --transcode-encoder=libopenh264
     timeout_s: 2400
     sink_data:
@@ -1419,9 +1419,9 @@ entries:
     requirements:
       # ensure the total number of documents processed is correct
       - metric: num_clips_generated
-        exact_value: 308
+        exact_value: 526
       - metric: throughput_clips_per_sec
-        min_value: 0.1
+        min_value: 0.65
 
   # Consumes the pre-staged AMI data and local PyAnnote snapshot produced by
   # benchmarking/data_prep/prepare_audio_tagging_data.py. Nightly passes
