@@ -491,7 +491,7 @@ class TestKMeansReadFitWriteStage:
             results = stage.process_batch(all_tasks)
 
             if expect_break:
-                mock_break.assert_called_once_with(all_files, embedding_dim=32)
+                mock_break.assert_called_once_with(all_files, embedding_dim=32, storage_options=None)
             else:
                 mock_break.assert_not_called()
 
