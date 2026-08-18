@@ -46,6 +46,21 @@ def pylibcudf_to_cudf_dataframe(table: plc.Table, column_names: list[str]) -> cu
     return cudf.DataFrame.from_pylibcudf(table, metadata={"columns": column_names})
 
 
+def _create_base_memory_resource(rmm_pool_size: int | None, *, rmm_async: bool) -> rmm.mr.DeviceMemoryResource:
+    if rmm_async:
+        return rmm.mr.CudaAsyncMemoryResource(
+            initial_pool_size=rmm_pool_size,
+            release_threshold=rmm_pool_size,
+            enable_ipc=True,
+        )
+
+    return rmm.mr.PoolMemoryResource(
+        rmm.mr.CudaMemoryResource(),
+        initial_pool_size=rmm_pool_size,
+        maximum_pool_size=None,
+    )
+
+
 # Exempt this class from coverage is it's indirectly tested by the ShuffleStage which coverage tools don't pick up.
 class BulkRapidsMPFShuffler(RapidsMPFActor):  # pragma: no cover
     """
@@ -65,6 +80,9 @@ class BulkRapidsMPFShuffler(RapidsMPFActor):  # pragma: no cover
         Size of the RMM GPU memory pool in bytes.
         If "auto", the memory pool is set to 90% of the free GPU memory.
         If None, the memory pool is set to 50% of the free GPU memory that can expand if needed.
+    rmm_async
+        Whether to use a CUDA asynchronous memory resource. If False, use a pool
+        memory resource backed by a CUDA memory resource.
     spill_memory_limit
         Device memory limit in bytes for spilling to host.
         If "auto", the limit is set to 80% of the RMM pool size.
@@ -88,6 +106,7 @@ class BulkRapidsMPFShuffler(RapidsMPFActor):  # pragma: no cover
         rmm_pool_size: int | Literal["auto"] | None = "auto",
         spill_memory_limit: int | Literal["auto"] | None = "auto",
         num_streams: int = 1,
+        rmm_async: bool = True,
         *,
         enable_statistics: bool = False,
         read_kwargs: dict[str, Any] | None = None,
@@ -97,6 +116,7 @@ class BulkRapidsMPFShuffler(RapidsMPFActor):  # pragma: no cover
         self.output_path = output_path
         self.total_nparts = total_nparts
         self.num_streams = num_streams
+        self.rmm_async = rmm_async
 
         if isinstance(rmm_pool_size, int):
             self.rmm_pool_size = align_down_to_256(rmm_pool_size)
@@ -125,11 +145,7 @@ class BulkRapidsMPFShuffler(RapidsMPFActor):  # pragma: no cover
         self.write_kwargs = write_kwargs if write_kwargs is not None else {}
 
         # BufferResource owns the tracking adaptor used by RapidsMPF and cuDF.
-        base_mr = rmm.mr.PoolMemoryResource(
-            rmm.mr.CudaMemoryResource(),
-            initial_pool_size=self.rmm_pool_size,
-            maximum_pool_size=None,
-        )
+        base_mr = _create_base_memory_resource(self.rmm_pool_size, rmm_async=self.rmm_async)
         memory_limits = None if self.spill_memory_limit is None else {MemoryType.DEVICE: self.spill_memory_limit}
         statistics = Statistics(enable=self.enable_statistics)
         stream_pool = stream_pool_from_options(Options({"num_streams": str(self.num_streams)}))
