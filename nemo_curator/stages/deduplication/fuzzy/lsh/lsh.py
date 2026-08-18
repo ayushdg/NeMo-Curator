@@ -55,6 +55,8 @@ class LSHActor(BulkRapidsMPFShuffler):
         Size of the RMM GPU memory pool in bytes.
         If "auto", the memory pool is set to 90% of the free GPU memory.
         If None, the memory pool is set to 50% of the free GPU memory that can expand if needed.
+    rmm_async
+        Whether to use a CUDA asynchronous memory resource for the shuffle.
     spill_memory_limit
         Device memory limit in bytes for spilling to host.
         If "auto", the limit is set to 80% of the RMM pool size.
@@ -102,6 +104,7 @@ class LSHActor(BulkRapidsMPFShuffler):
         output_path: str = "./",
         rmm_pool_size: int | Literal["auto"] | None = "auto",
         spill_memory_limit: int | Literal["auto"] | None = "auto",
+        rmm_async: bool = True,
         *,
         enable_statistics: bool = False,
         read_kwargs: dict[str, Any] | None = None,
@@ -113,6 +116,7 @@ class LSHActor(BulkRapidsMPFShuffler):
             shuffle_on=[CURATOR_LSH_BUCKET_FIELD],
             output_path=output_path,
             rmm_pool_size=rmm_pool_size,
+            rmm_async=rmm_async,
             spill_memory_limit=spill_memory_limit,
             enable_statistics=enable_statistics,
         )
