@@ -359,7 +359,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 512
+    timeout_s: 712
     sink_data:
       - name: slack
         additional_metrics:
@@ -479,7 +479,7 @@ entries:
       --input-filetype=parquet
       --blocksize=512MiB
       --text-field=raw_content
-    timeout_s: 620
+    timeout_s: 820
     sink_data:
       - name: slack
         additional_metrics:
