@@ -30,6 +30,7 @@ from .package_info import (
 )
 
 os.environ["RAPIDS_NO_INITIALIZE"] = "1"
+os.environ.setdefault("KVIKIO_AUTO_DIRECT_IO_WRITE", "0")
 
 from cosmos_xenna.ray_utils.cluster import API_LIMIT
 
