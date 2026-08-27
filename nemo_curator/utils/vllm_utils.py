@@ -28,7 +28,13 @@ utilities into other modalities.
 
 from __future__ import annotations
 
+from copy import deepcopy
+from typing import TYPE_CHECKING
+
 from loguru import logger
+
+if TYPE_CHECKING:
+    from collections.abc import Collection, Mapping
 
 # Errors that should not be retried. Add entries here when vLLM exposes
 # other fatal startup errors through generic EngineCore wrapper messages.
@@ -50,6 +56,41 @@ _ENGINE_STARTUP_FAILURE_MARKERS = (
     "engine core initialization failed",
     "enginecore failed to start",
 )
+
+
+def validate_vllm_kwargs(
+    vllm_kwargs: Mapping[str, object],
+    reserved_keys: Collection[str],
+    *,
+    owner_description: str,
+) -> None:
+    """Reject vLLM kwargs that override arguments owned by the caller."""
+    conflicts = sorted(set(vllm_kwargs).intersection(reserved_keys))
+    if conflicts:
+        msg = f"vllm_kwargs cannot override {owner_description}: {', '.join(conflicts)}"
+        raise ValueError(msg)
+
+
+def merge_vllm_kwargs(
+    vllm_kwargs: Mapping[str, object],
+    owned_kwargs: Mapping[str, object],
+    *,
+    owner_description: str,
+) -> dict[str, object]:
+    """Merge caller-owned vLLM arguments with user-provided engine options.
+
+    Callers describe the keyword arguments they own by passing the actual
+    ``owned_kwargs`` mapping. This keeps collision handling generic while the
+    owner-specific values remain next to the call that constructs the engine.
+    """
+    validate_vllm_kwargs(
+        vllm_kwargs,
+        owned_kwargs,
+        owner_description=owner_description,
+    )
+    merged_kwargs = deepcopy(dict(vllm_kwargs))
+    merged_kwargs.update(owned_kwargs)
+    return merged_kwargs
 
 
 def _exception_chain_text(exc: BaseException) -> str:
@@ -120,12 +161,6 @@ def create_vllm_llm(  # noqa: PLR0913
         (e.g. ``gpu_memory_utilization``, ``max_num_batched_tokens``). Keys here
         override the explicit defaults above when they collide.
     """
-    import os
-    import random
-    import time
-
-    from vllm import LLM
-
     if limit_mm_per_prompt is None:
         limit_mm_per_prompt = {"image": 1}
 
@@ -138,6 +173,17 @@ def create_vllm_llm(  # noqa: PLR0913
         "enforce_eager": enforce_eager,
         **extra_engine_kwargs,
     }
+
+    return create_vllm_llm_with_retry(max_port_retries=max_port_retries, **engine_kwargs)
+
+
+def create_vllm_llm_with_retry(*, max_port_retries: int = 3, **engine_kwargs: object) -> "vllm.LLM":  # noqa: F821,UP037
+    """Create a vLLM engine with port-collision retries and no added defaults."""
+    import os
+    import random
+    import time
+
+    from vllm import LLM
 
     for attempt in range(1, max_port_retries + 1):
         free_port = pick_free_port()

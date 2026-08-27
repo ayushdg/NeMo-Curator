@@ -24,7 +24,56 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 import nemo_curator.utils.vllm_utils as _vllm_utils
-from nemo_curator.utils.vllm_utils import pick_free_port, resolve_local_model_path
+from nemo_curator.utils.vllm_utils import (
+    merge_vllm_kwargs,
+    pick_free_port,
+    resolve_local_model_path,
+    validate_vllm_kwargs,
+)
+
+
+class TestVllmKwargs:
+    def test_accepts_non_conflicting_kwargs(self) -> None:
+        validate_vllm_kwargs(
+            {"max_model_len": 8192},
+            {"model", "revision"},
+            owner_description="adapter-owned arguments",
+        )
+
+    def test_rejects_conflicts_in_sorted_order(self) -> None:
+        with pytest.raises(
+            ValueError,
+            match=r"vllm_kwargs cannot override adapter-owned arguments: model, revision",
+        ):
+            validate_vllm_kwargs(
+                {"revision": "abc123", "model": "org/model"},
+                {"model", "revision"},
+                owner_description="adapter-owned arguments",
+            )
+
+    def test_merges_owned_kwargs_without_mutating_user_kwargs(self) -> None:
+        user_kwargs = {"max_model_len": 8192, "compilation_config": {"cudagraph_mode": "NONE"}}
+
+        merged = merge_vllm_kwargs(
+            user_kwargs,
+            {"model": "org/model", "revision": None},
+            owner_description="adapter-owned arguments",
+        )
+        compilation_config = merged["compilation_config"]
+        assert isinstance(compilation_config, dict)
+        compilation_config["cudagraph_mode"] = "FULL"
+
+        assert merged["model"] == "org/model"
+        assert merged["revision"] is None
+        assert user_kwargs["compilation_config"] == {"cudagraph_mode": "NONE"}
+
+    def test_rejects_owned_key_conflicts(self) -> None:
+        with pytest.raises(ValueError, match="cannot override stage-owned arguments: tensor_parallel_size"):
+            merge_vllm_kwargs(
+                {"tensor_parallel_size": 8},
+                {"model": "org/model", "tensor_parallel_size": 2},
+                owner_description="stage-owned arguments",
+            )
 
 
 class TestPickFreePort:
@@ -177,6 +226,28 @@ class TestCreateVllmLlm:
         assert captured_kwargs.get("max_num_seqs") == 128
         assert captured_kwargs.get("gpu_memory_utilization") == 0.95
         assert captured_kwargs.get("max_num_batched_tokens") == 16384
+
+    def test_retry_helper_forwards_exact_engine_kwargs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured_kwargs: dict = {}
+
+        class FakeLLM:
+            def __init__(self, **kwargs: object) -> None:
+                captured_kwargs.update(kwargs)
+
+        self._inject_fake_vllm(monkeypatch, FakeLLM)
+        monkeypatch.setattr(_vllm_utils, "pick_free_port", lambda: 12345)
+
+        _vllm_utils.create_vllm_llm_with_retry(
+            model="fake/model",
+            runner="pooling",
+            disable_log_stats=True,
+        )
+
+        assert captured_kwargs == {
+            "model": "fake/model",
+            "runner": "pooling",
+            "disable_log_stats": True,
+        }
 
     def test_non_eaddrinuse_raises_immediately(self, monkeypatch: pytest.MonkeyPatch):
         """A non-port-collision RuntimeError should propagate without retry."""
