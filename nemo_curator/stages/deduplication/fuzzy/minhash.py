@@ -28,7 +28,7 @@ from nemo_curator.stages.deduplication.fuzzy.utils import CURATOR_DEFAULT_MINHAS
 from nemo_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR, get_id_generator_actor
 from nemo_curator.stages.deduplication.io_utils import DeduplicationIO
 from nemo_curator.stages.resources import Resources
-from nemo_curator.stages.text.utils.text_normalization import normalize_text
+from nemo_curator.stages.text.utils.text import normalize_text
 from nemo_curator.tasks import DocumentBatch, FileGroupTask
 from nemo_curator.utils.file_utils import create_or_overwrite_dir, get_fs
 

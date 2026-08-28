@@ -24,7 +24,7 @@ with suppress(ImportError):
     import cudf
 
 with suppress(ImportError):
-    from nemo_curator.stages.text.utils.text_normalization import normalize_text
+    from nemo_curator.stages.text.utils.text import normalize_text
 
 
 @pytest.mark.gpu

@@ -20,7 +20,7 @@ from nemo_curator.stages.deduplication.id_generator import CURATOR_DEDUP_ID_STR,
 from nemo_curator.stages.deduplication.io_utils import DeduplicationIO
 from nemo_curator.stages.deduplication.shuffle_utils.rapidsmpf_shuffler import pylibcudf_to_cudf_dataframe
 from nemo_curator.stages.deduplication.shuffle_utils.stage import ShuffleStage
-from nemo_curator.stages.text.utils.text_normalization import normalize_text
+from nemo_curator.stages.text.utils.text import normalize_text
 from nemo_curator.tasks import FileGroupTask
 from nemo_curator.utils.file_utils import get_fs
 
