@@ -118,8 +118,8 @@ class RayActorPoolExecutor(BaseExecutor):
             )
             reserved_cpus = self.config.get("reserved_cpus", 0.0)
             reserved_gpus = self.config.get("reserved_gpus", 0.0)
-            resource_wait_timeout = float(self.config.get("resource_wait_timeout_s", 10.0))
-            resource_wait_interval = float(self.config.get("resource_wait_interval_s", 0.5))
+            resource_wait_timeout = float(self.config.get("resource_wait_timeout_s", 5.0))
+            resource_wait_interval = float(self.config.get("resource_wait_interval_s", 0.2))
             resource_baseline = get_available_actor_pool_resources(
                 reserved_cpus,
                 reserved_gpus,

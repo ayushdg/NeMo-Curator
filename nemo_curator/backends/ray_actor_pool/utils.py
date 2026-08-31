@@ -83,8 +83,8 @@ def calculate_optimal_actors_for_stage_with_wait(  # noqa: PLR0913
     reserved_cpus: float = 0.0,
     reserved_gpus: float = 0.0,
     ignore_head_node: bool = False,
-    timeout: float = 10.0,
-    interval: float = 0.5,
+    timeout: float = 5.0,
+    interval: float = 0.2,
 ) -> int:
     """Wait for the baseline-sized pool, then calculate from the final resource snapshot."""
     if timeout < 0 or interval <= 0:
