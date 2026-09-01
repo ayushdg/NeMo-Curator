@@ -86,7 +86,7 @@ def calculate_optimal_actors_for_stage_with_wait(  # noqa: PLR0913
     timeout: float = 5.0,
     interval: float = 0.2,
 ) -> int:
-    """Wait for the baseline-sized pool, then calculate from the final resource snapshot."""
+    """Wait for enough resources to create the baseline-sized actor pool."""
     if timeout < 0 or interval <= 0:
         msg = "resource_wait_timeout_s must be non-negative and resource_wait_interval_s must be positive"
         raise ValueError(msg)
@@ -114,23 +114,17 @@ def calculate_optimal_actors_for_stage_with_wait(  # noqa: PLR0913
                 f"required CPUs={required_cpus}, GPUs={required_gpus}; "
                 f"available CPUs={available_resources[0]}, GPUs={available_resources[1]}"
             )
-            try:
-                available_num_actors = calculate_optimal_actors_for_resources(stage, num_tasks, available_resources)
-            except ValueError:
-                msg = f"Timed out after {timeout}s waiting for resources for {stage.name}: {details}."
-                raise TimeoutError(msg) from None
-
-            logger.warning(
+            msg = (
                 f"Timed out after {timeout}s waiting for the intended {intended_num_actors}-actor pool "
-                f"for {stage.name} ({details}). Proceeding with {available_num_actors} actors."
+                f"for {stage.name}: {details}."
             )
-            return available_num_actors
+            raise TimeoutError(msg)
 
         logger.info(
             f"      Waiting for resources for {stage.name}: CPUs={available_resources[0]}/{required_cpus}, "
             f"GPUs={available_resources[1]}/{required_gpus}"
         )
-        time.sleep(interval)
+        time.sleep(min(interval, max(0.0, deadline - time.monotonic())))
 
 
 def calculate_optimal_actors_for_resources(

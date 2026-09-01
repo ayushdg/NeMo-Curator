@@ -79,8 +79,8 @@ class RayActorPoolExecutor(BaseExecutor):
 
         Args:
             config: Configuration dictionary for the executor. ``resource_wait_timeout_s``
-                controls how long to wait for an intended actor pool before degrading or
-                failing, and ``resource_wait_interval_s`` controls the polling interval.
+                controls how long to wait for the intended actor pool before failing, and
+                ``resource_wait_interval_s`` controls the polling interval.
             ignore_head_node: If True, don't schedule tasks on the head node.
             show_progress: If True, display tqdm progress bars during execution.
             progress_interval: Minimum interval in seconds between progress bar updates.

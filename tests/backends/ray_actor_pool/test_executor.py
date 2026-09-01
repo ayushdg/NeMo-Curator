@@ -83,7 +83,26 @@ class TestRayActorPoolExecutor:
 
         mock_sleep.assert_has_calls([mock.call(0.2), mock.call(0.2)])
 
-    def test_wait_for_stage_resources_degrades_when_one_actor_fits_at_timeout(self) -> None:
+    def test_wait_for_stage_resources_does_not_sleep_past_timeout(self) -> None:
+        stage = _stage_with_num_workers(num_workers=4, cpus=1.0, batch_size=1)
+
+        with (
+            mock.patch(
+                "nemo_curator.backends.ray_actor_pool.utils.get_available_cpu_gpu_resources",
+                return_value=(0.0, 0.0),
+            ),
+            mock.patch(
+                "nemo_curator.backends.ray_actor_pool.utils.time.monotonic",
+                side_effect=[0.0, 0.0, 0.0, 5.0],
+            ),
+            mock.patch("nemo_curator.backends.ray_actor_pool.utils.time.sleep") as mock_sleep,
+            pytest.raises(TimeoutError),
+        ):
+            calculate_optimal_actors_for_stage_with_wait(stage, 4, (4.0, 0.0), timeout=5.0, interval=60.0)
+
+        mock_sleep.assert_called_once_with(5.0)
+
+    def test_wait_for_stage_resources_raises_when_only_partial_pool_fits_at_timeout(self) -> None:
         stage = _stage_with_num_workers(num_workers=4, cpus=1.0, batch_size=1)
         stage.resources.gpus = 1.0
 
@@ -92,11 +111,15 @@ class TestRayActorPoolExecutor:
                 "nemo_curator.backends.ray_actor_pool.utils.get_available_cpu_gpu_resources",
                 return_value=(2.0, 1.0),
             ),
-            mock.patch("nemo_curator.backends.ray_actor_pool.utils.logger.warning") as mock_warning,
+            pytest.raises(
+                TimeoutError,
+                match=(
+                    r"intended 4-actor pool.*required CPUs=4\.0, GPUs=4\.0; "
+                    r"available CPUs=2\.0, GPUs=1\.0"
+                ),
+            ),
         ):
-            assert calculate_optimal_actors_for_stage_with_wait(stage, 4, (4.0, 4.0), timeout=0, interval=1) == 1
-
-        assert "Proceeding with 1 actors" in mock_warning.call_args.args[0]
+            calculate_optimal_actors_for_stage_with_wait(stage, 4, (4.0, 4.0), timeout=0, interval=1)
 
     def test_wait_for_stage_resources_raises_when_no_actor_fits_at_timeout(self) -> None:
         stage = _stage_with_num_workers(num_workers=4, cpus=1.0, batch_size=1)
