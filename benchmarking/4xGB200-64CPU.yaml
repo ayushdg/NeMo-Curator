@@ -31,9 +31,15 @@ entries:
 
   - name: embedding_generation_raydata
     timeout_s: 2400
+    requirements:
+      - metric: throughput_docs_per_sec
+        min_value: 4000
 
   - name: embedding_generation_xenna
     timeout_s: 2400
+    requirements:
+      - metric: throughput_docs_per_sec
+        min_value: 4000
 
   - name: exact_dedup_identification
     timeout_s: 2400
@@ -73,18 +79,33 @@ entries:
 
   - name: score_filter_raydata
     timeout_s: 2400
+    requirements:
+      - metric: throughput_docs_per_sec
+        min_value: 10000
 
   - name: score_filter_xenna
     timeout_s: 2400
+    requirements:
+      - metric: throughput_docs_per_sec
+        min_value: 10000
 
   - name: fasttext_filter_raydata
     timeout_s: 2400
+    requirements:
+      - metric: throughput_docs_per_sec
+        min_value: 40000
 
   - name: fasttext_filter_xenna
     timeout_s: 2400
+    requirements:
+      - metric: throughput_docs_per_sec
+        min_value: 50000
 
   - name: modifier_raydata
     timeout_s: 2400
+    requirements:
+      - metric: throughput_docs_per_sec
+        min_value: 50000
 
   - name: modifier_xenna
     timeout_s: 2400
@@ -159,6 +180,7 @@ entries:
       --executor=ray_data
       --engine-kwargs='{"tensor_parallel_size": 1}'
       --autoscaling-config='{"min_replicas": 4, "max_replicas": 4}'
+      --health-check-timeout-s=1200
     ray:
       num_cpus: 16
 
@@ -175,8 +197,12 @@ entries:
       --executor=ray_data
       --engine-kwargs='{"tensor_parallel_size": 1, "max_model_len": 131072}'
       --autoscaling-config='{"min_replicas": 4, "max_replicas": 4}'
+      --tiktoken-cache-dir={model_weights_path}/tiktoken_cache
     ray:
       num_cpus: 16
+    requirements:
+      - metric: throughput_rows_per_sec
+        min_value: 100
 
   - name: video_transnetv2_motion_aesthetic_filter_embeddings_xenna
     timeout_s: 3600
