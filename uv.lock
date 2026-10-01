@@ -5558,6 +5558,7 @@ all = [
     { name = "pylance" },
     { name = "pylibcugraph-cu12" },
     { name = "pylibraft-cu12" },
+    { name = "pyloudnorm" },
     { name = "pypdfium2" },
     { name = "python-magic" },
     { name = "quack-kernels", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -5599,6 +5600,7 @@ audio-common = [
     { name = "opencc-python-reimplemented" },
     { name = "pyannote-audio", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "pydub" },
+    { name = "pyloudnorm" },
     { name = "scipy" },
     { name = "silero-vad" },
     { name = "soundfile" },
@@ -5617,6 +5619,7 @@ audio-cpu = [
     { name = "opencc-python-reimplemented" },
     { name = "pyannote-audio", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "pydub" },
+    { name = "pyloudnorm" },
     { name = "scipy" },
     { name = "silero-vad" },
     { name = "soundfile" },
@@ -5641,6 +5644,7 @@ audio-cuda12 = [
     { name = "opencc-python-reimplemented" },
     { name = "pyannote-audio", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "pydub" },
+    { name = "pyloudnorm" },
     { name = "qwen-asr", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "qwen-omni-utils" },
     { name = "scipy" },
@@ -5668,6 +5672,7 @@ audio-tensorrt = [
     { name = "opencc-python-reimplemented" },
     { name = "pyannote-audio", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "pydub" },
+    { name = "pyloudnorm" },
     { name = "qwen-asr", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "qwen-omni-utils" },
     { name = "scipy" },
@@ -6065,6 +6070,7 @@ requires-dist = [
     { name = "pylance", marker = "extra == 'lance'", specifier = ">=7" },
     { name = "pylibcugraph-cu12", marker = "extra == 'deduplication-cuda12'", specifier = "==26.8.*" },
     { name = "pylibraft-cu12", marker = "extra == 'deduplication-cuda12'", specifier = "==26.8.*" },
+    { name = "pyloudnorm", marker = "extra == 'audio-common'" },
     { name = "pynvvideocodec", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin' and extra == 'video-media'", specifier = "==2.0.2" },
     { name = "pypdfium2", marker = "extra == 'interleaved-cpu'" },
     { name = "python-magic", marker = "extra == 'math-cpu'", specifier = "==0.4.24" },
@@ -9171,6 +9177,21 @@ dependencies = [
 wheels = [
     { url = "https://files.pythonhosted.org/packages/44/a3/9223404da001517a398720127c92ea3207c68e25c4cb3cce101b4d5cc0a9/pylibraft_cu12-26.8.0-cp311-abi3-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:cd220bc6e3ce87e2d6a6619516e17315c0aa3579ab16fc181a7b4766437cab5c", size = 924392, upload-time = "2026-08-06T18:05:00.922Z" },
     { url = "https://files.pythonhosted.org/packages/0f/57/ea0d97e6be7eff6b78d8afa5db3e53d3c5a814e893474755f0e2a8ee154c/pylibraft_cu12-26.8.0-cp311-abi3-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c6c5ba11d8a4ee7854c4289aecee72c0b632988c920a2956d2f6b26366cb4bae", size = 939974, upload-time = "2026-08-06T18:05:42.439Z" },
+]
+
+[[package]]
+name = "pyloudnorm"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'x86_64' or sys_platform == 'darwin'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform != 'darwin'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and platform_machine == 'x86_64' and sys_platform != 'darwin'" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/23/00/f915eaa75326f4209941179c2b93ac477f2040e4aeff5bb21d16eb8058f9/pyloudnorm-0.2.0.tar.gz", hash = "sha256:8bf597658ea4e1975c275adf490f6deb5369ea409f2901f939915efa4b681b16", size = 14037, upload-time = "2026-01-04T11:43:35.265Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/aa/b6/65a49a05614b2548edbba3aab118f2ebe7441dfd778accdcdce9f6567f20/pyloudnorm-0.2.0-py3-none-any.whl", hash = "sha256:9bb69afb904f59d007a7f9ba3d75d16fb8aeef35c44d6df822a9f192d69cf13f", size = 10879, upload-time = "2026-01-04T11:43:34.534Z" },
 ]
 
 [[package]]
