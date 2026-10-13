@@ -6,7 +6,7 @@ NeMo Curator's task-facing diarization stage and NeMo model adapter.
 From the repository root:
 
 ```bash
-uv sync --extra audio_cuda12
+uv sync --extra audio_cuda13
 
 uv run python - <<'PY'
 from nemo_curator.backends.ray_data import RayDataExecutor

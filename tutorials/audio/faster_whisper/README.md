@@ -22,7 +22,7 @@ Install the audio stack from the Curator repository root:
 
 ```bash
 # GPU (default tutorial configuration)
-uv sync --extra audio_cuda12
+uv sync --extra audio_cuda13
 
 # Or CPU only
 uv sync --extra audio_cpu
