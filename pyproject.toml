@@ -405,9 +405,10 @@ torchvision = [
     { index = "pytorch", marker = "sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')" },
     { index = "pypi", marker = "sys_platform == 'darwin' or (platform_machine != 'x86_64' and platform_machine != 'aarch64')" },
 ]
+
+# Audio decoding uses CPU TorchCodec; CUDA wheels require NPP even in CPU extras.
 torchcodec = [
-    { index = "pytorch", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
-    { index = "pypi", marker = "sys_platform != 'linux' or platform_machine != 'x86_64'" },
+    { index = "pypi", extra = "audio-common" },
 ]
 vllm = [
     { index = "vllm-cu130", marker = "sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')" },
