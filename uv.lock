@@ -5320,6 +5320,7 @@ all = [
     { name = "nemo-text-processing", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "nemo-toolkit", extra = ["asr"], marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "nixl-cu13", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-cudnn-cu13" },
     { name = "nvidia-dali-cuda130" },
     { name = "nvidia-ml-py" },
@@ -5413,6 +5414,7 @@ audio-cuda13 = [
     { name = "librosa" },
     { name = "nemo-text-processing", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "nemo-toolkit", extra = ["asr"], marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
+    { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-cudnn-cu13" },
     { name = "nvidia-ml-py" },
     { name = "onnx" },
@@ -5439,6 +5441,7 @@ audio-tensorrt = [
     { name = "librosa" },
     { name = "nemo-text-processing", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "nemo-toolkit", extra = ["asr"], marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
+    { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-cudnn-cu13" },
     { name = "nvidia-ml-py" },
     { name = "onnx" },
@@ -5821,6 +5824,7 @@ requires-dist = [
     { name = "nemo-text-processing", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin' and extra == 'audio-common'" },
     { name = "nemo-toolkit", extras = ["asr"], marker = "platform_machine == 'x86_64' and sys_platform != 'darwin' and extra == 'audio-common'", specifier = ">=2.7.2" },
     { name = "nixl-cu13", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'inference-server') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'inference-server')", specifier = ">=0.10.0", index = "https://pypi.org/simple" },
+    { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'audio-cuda13'", specifier = ">=12.8,<13" },
     { name = "nvidia-cudnn-cu13", marker = "extra == 'audio-cuda13'" },
     { name = "nvidia-dali-cuda130", marker = "extra == 'image-cuda13'" },
     { name = "nvidia-ml-py", marker = "extra == 'cuda13'" },
@@ -6421,6 +6425,17 @@ wheels = [
 ]
 
 [[package]]
+name = "nvidia-cublas-cu12"
+version = "12.9.2.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nvidia-cuda-nvrtc-cu12" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/c0/0a517bfe63ccd3b92eb254d264e28fca3c7cab75d07daea315250fb1bf73/nvidia_cublas_cu12-12.9.2.10-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:e4f53a8ca8c5d6e8c492d0d0a3d565ecb59a751b19cfdaa4f6da0ab2104c1702", size = 581240110, upload-time = "2026-04-08T18:52:31.532Z" },
+]
+
+[[package]]
 name = "nvidia-cuda-cccl"
 version = "13.0.85"
 source = { registry = "https://pypi.org/simple" }
@@ -6594,6 +6609,14 @@ resolution-markers = [
     "python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'",
     "python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'emscripten'",
     "python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'",
+]
+
+[[package]]
+name = "nvidia-cuda-nvrtc-cu12"
+version = "12.9.86"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/85/e4af82cc9202023862090bfca4ea827d533329e925c758f0cde964cb54b7/nvidia_cuda_nvrtc_cu12-12.9.86-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl", hash = "sha256:210cf05005a447e29214e9ce50851e83fc5f4358df8b453155d5e1918094dcb4", size = 89568129, upload-time = "2025-06-05T20:02:41.973Z" },
 ]
 
 [[package]]

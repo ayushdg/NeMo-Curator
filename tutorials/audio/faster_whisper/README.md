@@ -30,6 +30,10 @@ uv sync --extra audio_cpu
 source .venv/bin/activate
 ```
 
+`audio_cuda13` includes CUDA 12 cuBLAS because the published CTranslate2 wheels
+used by Faster-Whisper require it. The adapter loads these libraries for GPU
+inference; the remaining GPU dependencies use CUDA 13.
+
 `ResampleAudioStage` invokes `ffmpeg`, so input audio may use any format
 supported by the installed build. It writes PCM 16-bit, 16 kHz, mono WAV files
 under `resampled_audio_dir` before inference.
